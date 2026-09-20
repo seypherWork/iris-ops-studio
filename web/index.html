@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>IRIS Ops Studio</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="#overview" aria-label="IRIS Ops Studio home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span><strong>IRIS</strong><small>Ops Studio</small></span>
+        </a>
+
+        <nav aria-label="Primary navigation">
+          <p class="nav-label">Observe</p>
+          <button class="nav-item active" data-view="overview"><span>&#9707;</span>Overview</button>
+          <button class="nav-item" data-view="processes"><span>&#8961;</span>Processes</button>
+          <button class="nav-item" data-view="infrastructure"><span>&#9636;</span>Storage & devices</button>
+          <button class="nav-item" data-view="logs"><span>&#8801;</span>Logs & audit</button>
+          <p class="nav-label">Operate</p>
+          <button class="nav-item" data-view="tasks"><span>&#10003;</span>Tasks</button>
+          <button class="nav-item" data-view="access"><span>&#9671;</span>Access control</button>
+          <button class="nav-item" data-view="webapps"><span>&#8984;</span>Web apps</button>
+          <button class="nav-item" data-view="secrets"><span>&#8977;</span>Secrets inventory</button>
+          <button class="nav-item" data-view="oauth"><span>&#9678;</span>OAuth 2.0</button>
+          <p class="nav-label">Build</p>
+          <button class="nav-item" data-view="explorer"><span>&#8250;_</span>API explorer</button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="mode-card">
+            <span class="status-dot demo" id="mode-dot"></span>
+            <span><small>Data source</small><strong id="mode-label">Safe demo</strong></span>
+          </div>
+          <button class="ghost wide" id="connection-button">Connection settings</button>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">InterSystems IRIS administration</p>
+            <h1 id="page-title">Operational overview</h1>
+          </div>
+          <div class="top-actions">
+            <span class="health-chip"><span class="status-dot" id="health-dot"></span><span id="health-label">Demo healthy</span></span>
+            <button class="ghost mobile-only" data-open-connection>Connect</button>
+            <button class="ghost" id="refresh-button">Refresh</button>
+          </div>
+        </header>
+
+        <section id="content" class="content" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <dialog id="connection-dialog">
+      <form method="dialog" id="connection-form">
+        <div class="dialog-head">
+          <div><p class="eyebrow">Connection</p><h2>Connect to IRIS</h2></div>
+          <button class="icon-button" type="button" data-close-dialog="connection-dialog" aria-label="Close">&#215;</button>
+        </div>
+        <p class="dialog-copy">Credentials are sent only to the selected IRIS instance. Passwords are never stored or logged.</p>
+        <label>Admin API base URL<input id="base-url" name="baseUrl" value="/api/admin" autocomplete="url" /></label>
+        <div class="field-grid">
+          <label>Username<input id="username" name="username" autocomplete="username" /></label>
+          <label>Password<input id="password" name="password" type="password" autocomplete="current-password" /></label>
+        </div>
+        <label>Escalation role <span>(optional)</span><input id="role" name="role" autocomplete="off" /></label>
+        <label class="toggle-row"><input id="demo-mode" type="checkbox" checked /><span>Use safe demo data</span></label>
+        <div class="dialog-actions">
+          <button class="ghost" type="button" data-close-dialog="connection-dialog">Cancel</button>
+          <button class="primary" type="submit" id="connect-submit" value="default">Apply</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirm-dialog">
+      <form method="dialog" id="confirm-form">
+        <div class="dialog-head">
+          <div><p class="eyebrow warning">Protected operation</p><h2 id="confirm-title">Confirm action</h2></div>
+          <button class="icon-button" type="button" data-close-dialog="confirm-dialog" aria-label="Close">&#215;</button>
+        </div>
+        <div class="risk-panel" id="confirm-description"></div>
+        <label>Type the confirmation phrase<input id="confirmation-input" autocomplete="off" spellcheck="false" /></label>
+        <code id="confirmation-phrase"></code>
+        <div class="dialog-actions">
+          <button class="ghost" type="button" data-close-dialog="confirm-dialog">Cancel</button>
+          <button class="danger" type="submit" id="confirm-submit" value="default" disabled>Execute operation</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="assets/app.js?v=0.1.1"></script>
+  </body>
+</html>
