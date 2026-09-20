@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">IRIS Ops Studio</title>
+  <desc id="desc">IRIS Ops Studio teal operations mark on a dark background</desc>
+  <defs>
+    <radialGradient id="background" cx="78%" cy="10%" r="90%">
+      <stop offset="0" stop-color="#19454d"/>
+      <stop offset=".55" stop-color="#0a171c"/>
+      <stop offset="1" stop-color="#071014"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="92" fill="url(#background)"/>
+  <circle cx="390" cy="85" r="160" fill="#48e5c2" opacity=".07" filter="url(#glow)"/>
+  <g transform="translate(161 92) skewY(-14)">
+    <rect x="0" y="44" width="42" height="142" rx="12" fill="#48e5c2" opacity=".6"/>
+    <rect x="70" y="0" width="42" height="218" rx="12" fill="#48e5c2"/>
+    <rect x="140" y="31" width="42" height="169" rx="12" fill="#48e5c2" opacity=".82"/>
+  </g>
+  <text x="256" y="365" text-anchor="middle" fill="#ebf5f3" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="750" letter-spacing="5">IRIS OPS</text>
+  <text x="256" y="421" text-anchor="middle" fill="#84a2aa" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="650" letter-spacing="7">STUDIO</text>
+  <circle cx="256" cy="463" r="6" fill="#48e5c2"/>
+</svg>

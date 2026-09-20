@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="640" viewBox="0 0 1600 640" role="img" aria-labelledby="title desc">
+  <title id="title">IRIS Ops Studio</title>
+  <desc id="desc">Safety-first operations console for InterSystems IRIS</desc>
+  <defs>
+    <radialGradient id="glow" cx="78%" cy="8%" r="78%">
+      <stop offset="0" stop-color="#19454d"/>
+      <stop offset=".5" stop-color="#0a171c"/>
+      <stop offset="1" stop-color="#071014"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#11262d"/>
+      <stop offset="1" stop-color="#0b171c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#000" flood-opacity=".42"/>
+    </filter>
+    <filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="640" fill="url(#glow)"/>
+  <g opacity=".14" stroke="#48e5c2" stroke-width="1">
+    <path d="M0 100H1600M0 200H1600M0 300H1600M0 400H1600M0 500H1600"/>
+    <path d="M100 0V640M300 0V640M500 0V640M700 0V640M900 0V640M1100 0V640M1300 0V640M1500 0V640"/>
+  </g>
+  <circle cx="1310" cy="65" r="230" fill="#48e5c2" opacity=".06" filter="url(#softGlow)"/>
+
+  <g transform="translate(105 105)">
+    <g transform="skewY(-14)">
+      <rect x="0" y="32" width="22" height="82" rx="6" fill="#48e5c2" opacity=".6"/>
+      <rect x="34" y="0" width="22" height="126" rx="6" fill="#48e5c2"/>
+      <rect x="68" y="20" width="22" height="98" rx="6" fill="#48e5c2" opacity=".82"/>
+    </g>
+    <text x="0" y="210" fill="#ebf5f3" font-family="Segoe UI, Arial, sans-serif" font-size="68" font-weight="750" letter-spacing="5">IRIS OPS</text>
+    <text x="0" y="273" fill="#ebf5f3" font-family="Segoe UI, Arial, sans-serif" font-size="68" font-weight="750" letter-spacing="5">STUDIO</text>
+    <text x="2" y="332" fill="#84a2aa" font-family="Segoe UI, Arial, sans-serif" font-size="23" letter-spacing="2">SAFETY-FIRST IRIS OPERATIONS</text>
+    <g transform="translate(0 382)">
+      <rect width="168" height="45" rx="22.5" fill="#48e5c2" opacity=".12" stroke="#48e5c2" stroke-opacity=".45"/>
+      <circle cx="25" cy="22.5" r="6" fill="#48e5c2"/>
+      <text x="44" y="29" fill="#9ff3df" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="650">IRIS 2026.2</text>
+    </g>
+  </g>
+
+  <g transform="translate(750 88)" filter="url(#shadow)">
+    <rect width="750" height="470" rx="24" fill="#0c181d" stroke="#25434d" stroke-width="2"/>
+    <rect width="180" height="470" rx="24" fill="#091317"/>
+    <rect x="179" width="1" height="470" fill="#1c333c"/>
+    <g transform="translate(24 32)">
+      <rect y="12" width="8" height="36" rx="2" fill="#48e5c2" opacity=".6"/>
+      <rect x="14" width="8" height="52" rx="2" fill="#48e5c2"/>
+      <rect x="28" y="8" width="8" height="42" rx="2" fill="#48e5c2" opacity=".8"/>
+      <text x="50" y="24" fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="17" font-weight="700" letter-spacing="1.5">IRIS OPS</text>
+      <text x="50" y="44" fill="#6f9098" font-family="Segoe UI, Arial" font-size="10" letter-spacing="1.6">STUDIO</text>
+    </g>
+    <g font-family="Segoe UI, Arial" font-size="12">
+      <rect x="18" y="114" width="144" height="38" rx="9" fill="#14312f"/>
+      <rect x="18" y="114" width="3" height="38" rx="1.5" fill="#48e5c2"/>
+      <text x="42" y="138" fill="#ebf5f3">Overview</text>
+      <text x="42" y="183" fill="#84a2aa">Processes</text>
+      <text x="42" y="226" fill="#84a2aa">Storage &amp; devices</text>
+      <text x="42" y="269" fill="#84a2aa">Tasks</text>
+      <text x="42" y="312" fill="#84a2aa">Access control</text>
+      <text x="42" y="355" fill="#84a2aa">API explorer</text>
+    </g>
+    <g transform="translate(180 0)">
+      <rect width="570" height="92" fill="#0a171b"/>
+      <text x="28" y="31" fill="#48e5c2" font-family="Segoe UI, Arial" font-size="10" font-weight="700" letter-spacing="1.8">INTERSYSTEMS IRIS ADMINISTRATION</text>
+      <text x="28" y="62" fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="25" font-weight="700">Operational overview</text>
+      <rect x="432" y="31" width="105" height="30" rx="15" fill="#10272a" stroke="#285052"/>
+      <circle cx="450" cy="46" r="4" fill="#48e5c2"/>
+      <text x="462" y="51" fill="#b9d3d1" font-family="Segoe UI, Arial" font-size="10">IRIS connected</text>
+    </g>
+    <g transform="translate(204 120)">
+      <g>
+        <rect width="120" height="85" rx="12" fill="url(#panel)" stroke="#24414a"/>
+        <text x="14" y="22" fill="#84a2aa" font-family="Segoe UI, Arial" font-size="10">UPTIME</text>
+        <text x="14" y="61" fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="23" font-weight="700">18d 07h</text>
+      </g>
+      <g transform="translate(134)">
+        <rect width="120" height="85" rx="12" fill="url(#panel)" stroke="#24414a"/>
+        <text x="14" y="22" fill="#84a2aa" font-family="Segoe UI, Arial" font-size="10">PROCESSES</text>
+        <text x="14" y="61" fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="25" font-weight="700">84</text>
+      </g>
+      <g transform="translate(268)">
+        <rect width="120" height="85" rx="12" fill="url(#panel)" stroke="#24414a"/>
+        <text x="14" y="22" fill="#84a2aa" font-family="Segoe UI, Arial" font-size="10">TASKS</text>
+        <text x="14" y="61" fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="25" font-weight="700">3</text>
+      </g>
+      <g transform="translate(402)">
+        <rect width="120" height="85" rx="12" fill="url(#panel)" stroke="#24414a"/>
+        <text x="14" y="22" fill="#84a2aa" font-family="Segoe UI, Arial" font-size="10">WARNINGS</text>
+        <text x="14" y="61" fill="#ffc857" font-family="Segoe UI, Arial" font-size="25" font-weight="700">2</text>
+      </g>
+      <g transform="translate(0 105)">
+        <rect width="322" height="202" rx="14" fill="url(#panel)" stroke="#24414a"/>
+        <text x="18" y="29" fill="#48e5c2" font-family="Segoe UI, Arial" font-size="9" font-weight="700" letter-spacing="1.3">IRIS SYSADMIN API</text>
+        <text x="18" y="56" fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="17" font-weight="650">Resource posture</text>
+        <g fill="none" stroke-width="8">
+          <circle cx="70" cy="128" r="34" stroke="#1b3037"/>
+          <circle cx="70" cy="128" r="34" stroke="#48e5c2" stroke-dasharray="67 147" transform="rotate(-90 70 128)"/>
+          <circle cx="161" cy="128" r="34" stroke="#1b3037"/>
+          <circle cx="161" cy="128" r="34" stroke="#55a7ff" stroke-dasharray="108 106" transform="rotate(-90 161 128)"/>
+          <circle cx="252" cy="128" r="34" stroke="#1b3037"/>
+          <circle cx="252" cy="128" r="34" stroke="#9f86ff" stroke-dasharray="89 125" transform="rotate(-90 252 128)"/>
+        </g>
+        <g fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="13" font-weight="700" text-anchor="middle">
+          <text x="70" y="133">31%</text><text x="161" y="133">51%</text><text x="252" y="133">42%</text>
+        </g>
+      </g>
+      <g transform="translate(336 105)">
+        <rect width="186" height="202" rx="14" fill="url(#panel)" stroke="#24414a"/>
+        <text x="17" y="29" fill="#48e5c2" font-family="Segoe UI, Arial" font-size="9" font-weight="700" letter-spacing="1.2">PROTECTED OPERATIONS</text>
+        <text x="17" y="58" fill="#ebf5f3" font-family="Segoe UI, Arial" font-size="16" font-weight="650">Risk is visible</text>
+        <rect x="17" y="83" width="152" height="31" rx="7" fill="#112a2b" stroke="#2f5954"/>
+        <text x="31" y="103" fill="#73e9cf" font-family="Segoe UI, Arial" font-size="10">READ · SAFE</text>
+        <rect x="17" y="125" width="152" height="31" rx="7" fill="#30271b" stroke="#665126"/>
+        <text x="31" y="145" fill="#ffc857" font-family="Segoe UI, Arial" font-size="10">MUTATION · CONFIRM</text>
+        <rect x="17" y="167" width="152" height="22" rx="7" fill="#351b20" stroke="#70404a"/>
+        <text x="31" y="182" fill="#ff8b97" font-family="Segoe UI, Arial" font-size="9">DESTRUCTIVE</text>
+      </g>
+    </g>
+  </g>
+</svg>
