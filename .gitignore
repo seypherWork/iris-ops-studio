@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+coverage/
+artifacts/
+docs/assets/overview-mobile.png

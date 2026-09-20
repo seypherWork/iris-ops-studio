@@ -1,0 +1,8 @@
+    zn "%SYS"
+    do $SYSTEM.OBJ.Load("/home/irisowner/irisbuild/Installer.cls", "ck")
+    set sc = ##class(IrisOps.Installer).setup()
+    if $SYSTEM.Status.IsError(sc) do $SYSTEM.Status.DisplayError(sc) halt 1
+
+    zn "IRISOPS"
+    zpm "load /home/irisowner/irisbuild/ -v":1:1
+    halt

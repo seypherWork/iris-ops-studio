@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS">
+  <Document name="iris-ops-studio.ZPM">
+    <Module>
+      <Name>iris-ops-studio</Name>
+      <Version>0.1.0</Version>
+      <Description>Safety-first management portal for InterSystems IRIS SysAdmin APIs</Description>
+      <Keywords>IRIS,SysAdmin,operations,monitoring,security</Keywords>
+      <Packaging>module</Packaging>
+      <CSPApplication CookiePath="/csp/ops/" DefaultTimeout="900" DeployPath="${cspdir}/ops" MatchRoles=":${dbrole}" PasswordAuthEnabled="0" Recurse="1" ServeFiles="1" ServeFilesTimeout="3600" SourcePath="/web" UnauthenticatedEnabled="1" Url="/csp/ops" UseSessionCookie="2"/>
+      <SourcesRoot>src</SourcesRoot>
+      <Resource Directory="cls" Name="IrisOps.PKG"/>
+    </Module>
+  </Document>
+</Export>
