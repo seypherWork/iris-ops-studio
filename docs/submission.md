@@ -1,4 +1,4 @@
-# Contest submission draft
+# Contest submission record
 
 ## Application name
 
@@ -52,21 +52,19 @@ workflow reviewable without credentials.
 - 25 automated syntax, client, redaction, timeout, async-job, UI-contract, and
   mock-server tests.
 
-## Suggested contest categories
-
-- Expert vote
-- Community vote
-- Freshmen only if the entrant independently satisfies the contest definition
-
-Do not claim the Freshmen category unless the account history meets the
-published eligibility requirements.
-
 ## Submission links
 
 - Public repository: https://github.com/seypherWork/iris-ops-studio
-- Open Exchange application: added after the listing is published
-- Demonstration: the README provides a detailed product tour, screenshots, and
-  a reproducible demo workflow; no standalone video is required for this entry.
+- Public demonstration: https://seypherwork.github.io/iris-ops-studio/
+- Open Exchange application: https://openexchange.intersystems.com/package/IRIS-Ops-Studio
+
+## Submission status
+
+- Sent to InterSystems Open Exchange for approval on 21 September 2026.
+- Contest participation was selected for **InterSystems Programming Contest:
+  Build Your Own Management Portal**.
+- Open Exchange currently reports **Pending approval**. The public application
+  URL becomes available after InterSystems approves the listing.
 
 ## Final factual checks
 
