@@ -1,6 +1,6 @@
 # Validation report
 
-Date: 2026-09-20
+Date: 2026-09-21
 
 ## Current result
 
@@ -14,15 +14,33 @@ contest submission remain separate, deliberate actions.
 - Live authentication: HTTP 200 and bearer token received, then redacted.
 - Live reads: `/info`, monitor dashboard, processes, and databases returned
   HTTP 200 with JSON.
+- Live task execution: a disposable task ran through
+  `POST /v2/task/run`; its counter changed from 0 to 1 and `LastFinished` was
+  populated.
+- Live process control: a dedicated disposable job changed from `HANG` to
+  `SUSP`, returned to `HANG`, and disappeared after the suspend, resume, and
+  terminate endpoints each returned HTTP 200.
+- Invalid input: a non-numeric process identifier was rejected with HTTP 404
+  without a sensitive response body.
+- Connection failure: the UI reported `Failed to fetch` for an unused local
+  endpoint and cleared the password field.
 - Visual checks: desktop 1440x900 and mobile 390x844 passed without page
   overflow; connection and confirmation dialogs remained usable.
+- Confirmation safety: an incorrect phrase kept execution disabled and the
+  exact generated phrase enabled it; the dialog was canceled without sending
+  the demo operation.
 - Browser live mode: login completed, the UI displayed `Live IRIS`, and the
   Processes view rendered rows returned by the real SysAdmin API.
 - Runtime logs: no fatal, panic, segmentation, or access-violation patterns in
-  the isolated live-API run.
+  the isolated mutation run.
+- Cleanup: the disposable container had no persistent mounts and was removed;
+  both pre-existing IRIS containers and both named volumes remain present.
 
 Evidence is stored in `artifacts/windows-validation.txt` and
-`artifacts/live-api-validation.txt`. No real mutation was sent to IRIS.
+`artifacts/live-api-validation.txt`, with the final mutation evidence in
+`artifacts/live-mutation-validation-2026-09-21.txt`. The artifact directory is
+intentionally excluded from Git because it contains machine-specific runtime
+evidence.
 
 ## Historical automated result
 
@@ -75,6 +93,6 @@ traceability; the current result above supersedes its environment limitations.
 
 ## Remaining submission work
 
-- Record the final demo video if the contest requires one.
-- Publish the repository and Open Exchange page only after explicit approval.
-- Send the contest submission only after explicit approval.
+- Add the public demonstration video to the Open Exchange application page.
+- Confirm that the contest entry contains the final repository, live demo, and
+  video URLs before the published deadline.

@@ -56,15 +56,15 @@ workflow reviewable without credentials.
 
 - Public repository: https://github.com/seypherWork/iris-ops-studio
 - Public demonstration: https://seypherwork.github.io/iris-ops-studio/
+- Video demonstration: https://www.youtube.com/watch?v=Vxn_usXOEPU
 - Open Exchange application: https://openexchange.intersystems.com/package/IRIS-Ops-Studio
 
 ## Submission status
 
-- Sent to InterSystems Open Exchange for approval on 21 September 2026.
+- Published on InterSystems Open Exchange on 21 September 2026.
 - Contest participation was selected for **InterSystems Programming Contest:
   Build Your Own Management Portal**.
-- Open Exchange currently reports **Pending approval**. The public application
-  URL becomes available after InterSystems approves the listing.
+- The Open Exchange application and final YouTube demonstration are public.
 
 ## Final factual checks
 
