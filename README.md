@@ -27,6 +27,22 @@ Original challenge and requirements: [Contest 48](https://openexchange.intersyst
 Validation evidence: [current validation report](docs/validation-report.md).
 Status: technically validated and ready for contest review.
 
+## Video demonstration
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=Vxn_usXOEPU">
+    <img src="docs/assets/youtube-demo-thumbnail.png" alt="Watch the IRIS Ops Studio video demonstration" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <strong><a href="https://www.youtube.com/watch?v=Vxn_usXOEPU">Watch the IRIS Ops Studio demonstration on YouTube</a></strong>
+</p>
+
+The video presents the responsive desktop and mobile interface, the safety
+classification model, exact typed confirmations, and sanitized evidence from
+the live validation against InterSystems IRIS Community 2026.2.
+
 ## Why it is useful
 
 The standard management surface is broad. Operators often need a smaller view
@@ -214,8 +230,10 @@ fixtures make the complete interface reviewable without an IRIS instance.
 - Client, redaction, safety classification, HTTP error, and timeout tests:
   automated with `node:test`.
 - Mock-server routes and static application: locally testable without secrets.
-- Real IRIS 2026.2 container integration: verified for login and representative
-  read endpoints, with credentials and access tokens excluded from the report.
+- Real IRIS 2026.2 container integration: verified for login, representative
+  read endpoints, task execution, and suspend/resume/terminate control of a
+  dedicated test process. Invalid input and connection failure were also
+  exercised; credentials and access tokens are excluded from the report.
 - The latest verified results are recorded in
   [docs/validation-report.md](docs/validation-report.md).
 
@@ -239,6 +257,7 @@ fixtures make the complete interface reviewable without an IRIS instance.
 
 ## Contest material
 
+- [Video demonstration](https://www.youtube.com/watch?v=Vxn_usXOEPU)
 - [Submission draft](docs/submission.md)
 - [90-second demonstration script](docs/demo-script.md)
 - [API compatibility notes](docs/api-compatibility.md)
