@@ -93,6 +93,7 @@ traceability; the current result above supersedes its environment limitations.
 
 ## Remaining submission work
 
-- Add the public demonstration video to the Open Exchange application page.
-- Confirm that the contest entry contains the final repository, live demo, and
-  video URLs before the published deadline.
+- The Open Exchange description edit containing the public video URL was sent
+  for approval on 21 September 2026.
+- Confirm that the approved contest entry contains the final repository, live
+  demo, and video URLs before the published deadline.

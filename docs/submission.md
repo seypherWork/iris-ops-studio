@@ -65,6 +65,8 @@ workflow reviewable without credentials.
 - Contest participation was selected for **InterSystems Programming Contest:
   Build Your Own Management Portal**.
 - The Open Exchange application and final YouTube demonstration are public.
+  The video-link edit was sent to Open Exchange for approval on 21 September
+  2026.
 
 ## Final factual checks
 
