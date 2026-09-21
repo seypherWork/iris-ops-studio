@@ -25,6 +25,7 @@ Build Your Own Management Portal**.
 
 Original challenge and requirements: [Contest 48](https://openexchange.intersystems.com/contest/48).
 Validation evidence: [current validation report](docs/validation-report.md).
+Developer Community article: [IRIS Ops Studio: a safety-first operations console for InterSystems IRIS](https://community.intersystems.com/post/iris-ops-studio-safety-first-operations-console-intersystems-iris).
 Status: technically validated and ready for contest review.
 
 ## Video demonstration
