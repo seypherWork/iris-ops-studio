@@ -7,10 +7,25 @@ const root = fileURLToPath(new URL("../web/", import.meta.url));
 const port = Number(process.env.PORT || 4173);
 
 const processes = [
-  { Pid: 8421, Nspace: "IRISAPP", Routine: "%SYS.Task.RunLegacyTask", Username: "SYSTEM", State: "RUN", CPUTime: 1842, ElapsedTime: "03:04:33" },
-  { Pid: 8407, Nspace: "%SYS", Routine: "%MONLBL", Username: "SYSTEM", State: "RUN", CPUTime: 422, ElapsedTime: "01:14:08" },
-  { Pid: 8388, Nspace: "USER", Routine: "%CSP.Session", Username: "demo-operator", State: "READ", CPUTime: 81, ElapsedTime: "00:22:41" },
+  { Pid: 8421, Nspace: "IRISAPP", Routine: "%SYS.Task.RunLegacyTask", Username: "SYSTEM", State: "RUN", CPUTime: 1842, ElapsedTime: "03:04:33", CanBeSuspended: true, CanBeTerminated: true },
+  { Pid: 8407, Nspace: "%SYS", Routine: "%MONLBL", Username: "SYSTEM", State: "RUN", CPUTime: 422, ElapsedTime: "01:14:08", CanBeSuspended: false, CanBeTerminated: false },
+  { Pid: 8388, Nspace: "USER", Routine: "%CSP.Session", Username: "demo-operator", State: "READ", CPUTime: 81, ElapsedTime: "00:22:41", CanBeSuspended: true, CanBeTerminated: true },
 ];
+
+const tasks = [
+  { Id: 17, Name: "PurgeAudit", Namespace: "%SYS", Type: "System", Suspended: false, LastStarted: "2026-09-14 02:00:00", LastFinished: "2026-09-14 02:01:00", NextScheduled: "2026-09-15 02:00:00" },
+  { Id: 24, Name: "BackupCheck", Namespace: "IRISAPP", Type: "User", Suspended: true, LastStarted: "2026-09-14 12:00:00", LastFinished: "2026-09-14 12:00:30", NextScheduled: "2026-09-15 12:30:00" },
+];
+
+const users = {
+  "ops-admin": { Enabled: true, FullName: "Operations administrator", NameSpace: "%SYS", Roles: ["%Manager"], EscalationRoles: [] },
+  IrisOps_TestUser: { Enabled: true, FullName: "IRIS Ops validation user", NameSpace: "USER", Roles: ["IrisOps_TestRole"], EscalationRoles: [] },
+};
+
+const roles = {
+  "%Manager": { Description: "IRIS system manager", GrantedRoles: ["%All"], EscalationOnly: false, Resources: [{ Name: "%Admin_Operate", Permissions: "RWU" }] },
+  IrisOps_TestRole: { Description: "Disposable validation role", GrantedRoles: [], EscalationOnly: false, Resources: [{ Name: "%DB_IRISOPS", Permissions: "R" }] },
+};
 
 const fixtures = {
   "/api/admin/info": { server: "local-mock", version: "IRIS 2026.2", namespace: "%SYS", user: "demo-operator", api: "SysAdmin v2" },
@@ -25,12 +40,11 @@ const fixtures = {
   "/api/admin/v2/devices": { status: {}, result: [
     { Name: "|TRM|", PhysicalDevice: "/dev/pts", Type: "TRM", SubType: "C-IRIS Terminal", Description: "Interactive terminal" },
   ] },
-  "/api/admin/v2/tasks": { status: {}, result: [
-    { Id: 17, Name: "PurgeAudit", Namespace: "%SYS", Type: "System", Suspended: false, LastFinished: "2026-09-14 02:01:00", NextScheduled: "2026-09-15 02:00:00" },
-    { Id: 24, Name: "BackupCheck", Namespace: "IRISAPP", Type: "User", Suspended: true, LastFinished: "2026-09-14 12:00:00", NextScheduled: "2026-09-15 12:30:00" },
-  ] },
-  "/api/admin/v2/security/users": { status: {}, result: [{ Name: "ops-admin", FullName: "Operations administrator", Enabled: true, Type: "Password user", Namespace: "%SYS", Routine: "" }] },
-  "/api/admin/v2/security/roles": { status: {}, result: [{ Name: "%Manager", Description: "IRIS system manager", CreatedBy: "_SYSTEM", EscalationOnly: false }] },
+  "/api/admin/v2/tasks": { status: {}, result: tasks },
+  "/api/admin/v2/task/history": { status: {}, result: [{ TaskId: 17, Name: "PurgeAudit", LastStart: "2026-09-15 02:00:00", Completed: "2026-09-15 02:01:00", Status: "Completed", Result: "Success", Namespace: "%SYS", Username: "SYSTEM", LogDatetime: "2026-09-15 02:01:00" }] },
+  "/api/admin/v2/security/users": { status: {}, result: [{ Name: "ops-admin", FullName: "Operations administrator", Enabled: true, Type: "Password user", NameSpace: "%SYS", Roles: ["%Manager"], Routine: "" }, { Name: "IrisOps_TestUser", FullName: "IRIS Ops validation user", Enabled: true, Type: "Password user", NameSpace: "USER", Roles: ["IrisOps_TestRole"], Routine: "" }] },
+  "/api/admin/v2/security/roles": { status: {}, result: [{ Name: "%Manager", Description: "IRIS system manager", CreatedBy: "_SYSTEM", EscalationOnly: false, ResourceCount: 1 }, { Name: "IrisOps_TestRole", Description: "Disposable validation role", CreatedBy: "demo-operator", EscalationOnly: false, ResourceCount: 1 }] },
+  "/api/admin/v2/security/resources": { status: {}, result: [{ Name: "%Admin_Operate", Description: "Operate and monitor IRIS", PublicPermission: "" }, { Name: "%Admin_Secure", Description: "Manage security", PublicPermission: "" }, { Name: "%DB_IRISOPS", Description: "Validation database", PublicPermission: "" }] },
   "/api/admin/v2/web-apps": { status: {}, result: [{ Name: "/csp/ops", Namespace: "IRISOPS", Enabled: true, AuthenticationMethods: ["Password", "JWT"], DispatchClass: "", Resource: "%DB_IRISOPS" }] },
   "/api/admin/v2/wallet/collections": { status: {}, result: [{ Name: "Integration secrets", EditResource: "%Admin_Wallet", UseResource: "%DB_IRISOPS" }] },
   "/api/admin/v2/security/x509-credentials": { status: {}, result: [{ Alias: "mTLS gateway", HasPrivateKey: true, OwnerList: ["ops-admin"], PeerNames: ["gateway.example"] }] },
@@ -63,6 +77,57 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname.startsWith("/api/admin/")) {
+    if (url.pathname === "/api/admin/v2/process" && req.method === "GET") {
+      const process = processes.find((item) => String(item.Pid) === url.searchParams.get("id"));
+      return process ? json(res, 200, { status: {}, result: process }) : json(res, 404, { error: "Process not found" });
+    }
+    if (["/api/admin/v2/process/suspend", "/api/admin/v2/process/resume", "/api/admin/v2/process/terminate"].includes(url.pathname) && req.method === "POST") {
+      const index = processes.findIndex((item) => String(item.Pid) === url.searchParams.get("id"));
+      if (index < 0) return json(res, 404, { error: "Process not found" });
+      if (url.pathname.endsWith("/suspend") && !processes[index].CanBeSuspended) return json(res, 409, { error: "Process cannot be suspended" });
+      if (url.pathname.endsWith("/terminate") && !processes[index].CanBeTerminated) return json(res, 409, { error: "Process cannot be terminated" });
+      if (url.pathname.endsWith("/terminate")) processes.splice(index, 1);
+      else {
+        processes[index].State = url.pathname.endsWith("/suspend") ? "SUSP" : "RUN";
+        processes[index].CanBeSuspended = !url.pathname.endsWith("/suspend");
+      }
+      return json(res, 200, { status: {}, result: { accepted: true } });
+    }
+    if (url.pathname === "/api/admin/v2/task/info" && req.method === "GET") {
+      const task = tasks.find((item) => String(item.Id) === url.searchParams.get("id"));
+      return task ? json(res, 200, { status: {}, result: { Suspended: task.Suspended, LastStarted: task.LastStarted, LastFinished: task.LastFinished, Status: "1", Error: "Success" } }) : json(res, 404, { error: "Task not found" });
+    }
+    if (["/api/admin/v2/task/run", "/api/admin/v2/task/suspend", "/api/admin/v2/task/resume"].includes(url.pathname) && req.method === "POST") {
+      const task = tasks.find((item) => String(item.Id) === url.searchParams.get("id"));
+      if (!task) return json(res, 404, { error: "Task not found" });
+      await consumeJson(req);
+      if (url.pathname.endsWith("/run")) {
+        task.LastStarted = new Date().toISOString();
+        task.LastFinished = new Date(Date.now() + 1).toISOString();
+      }
+      else task.Suspended = url.pathname.endsWith("/suspend");
+      return json(res, 200, { status: {}, result: { accepted: true } });
+    }
+    if (url.pathname === "/api/admin/v2/security/user") {
+      const name = url.searchParams.get("name");
+      if (!users[name]) return json(res, 404, { error: "User not found" });
+      if (req.method === "GET") return json(res, 200, { status: {}, result: users[name] });
+      if (req.method === "PUT") {
+        const input = await consumeJson(req);
+        users[name] = { ...users[name], ...(input || {}) };
+        return json(res, 200, { status: {}, result: users[name] });
+      }
+    }
+    if (url.pathname === "/api/admin/v2/security/role") {
+      const name = url.searchParams.get("name");
+      if (!roles[name]) return json(res, 404, { error: "Role not found" });
+      if (req.method === "GET") return json(res, 200, { status: {}, result: roles[name] });
+      if (req.method === "PUT") {
+        const input = await consumeJson(req);
+        roles[name] = { ...roles[name], ...(input || {}) };
+        return json(res, 200, { status: {}, result: roles[name] });
+      }
+    }
     if (url.pathname === "/api/admin/v2/security/audit/records" && req.method === "POST") {
       await consumeJson(req);
       return json(res, 202, { status: {}, result: { GUID: "mock-audit-1" } }, { Location: "/api/admin/v2/async-result?id=mock-audit-1" });

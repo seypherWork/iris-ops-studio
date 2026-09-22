@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <title>IRIS Ops Studio</title>
-    <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/styles.css?v=1.1.0" />
   </head>
   <body>
     <div class="shell">
@@ -48,7 +48,8 @@
           </div>
           <div class="top-actions">
             <span class="health-chip"><span class="status-dot" id="health-dot"></span><span id="health-label">Demo healthy</span></span>
-            <button class="ghost mobile-only" data-open-connection>Connect</button>
+            <button class="ghost journal-button" id="journal-button">Journal <span id="journal-count">0</span></button>
+            <button class="ghost mobile-only" data-open-connection>Connection</button>
             <button class="ghost" id="refresh-button">Refresh</button>
           </div>
         </header>
@@ -63,7 +64,7 @@
           <div><p class="eyebrow">Connection</p><h2>Connect to IRIS</h2></div>
           <button class="icon-button" type="button" data-close-dialog="connection-dialog" aria-label="Close">&#215;</button>
         </div>
-        <p class="dialog-copy">Credentials are sent only to the selected IRIS instance. Passwords are never stored or logged.</p>
+        <p class="dialog-copy">Credentials are sent only to the selected IRIS instance. Passwords are cleared after each attempt. Access and refresh tokens stay in page memory only and are never written to the operation journal.</p>
         <label>Admin API base URL<input id="base-url" name="baseUrl" value="/api/admin" autocomplete="url" /></label>
         <div class="field-grid">
           <label>Username<input id="username" name="username" autocomplete="username" /></label>
@@ -89,12 +90,12 @@
         <code id="confirmation-phrase"></code>
         <div class="dialog-actions">
           <button class="ghost" type="button" data-close-dialog="confirm-dialog">Cancel</button>
-          <button class="danger" type="submit" id="confirm-submit" value="default" disabled>Execute operation</button>
+          <button class="danger" type="submit" id="confirm-submit" value="default" disabled>Execute &amp; verify</button>
         </div>
       </form>
     </dialog>
 
     <div id="toast" class="toast" role="status"></div>
-    <script type="module" src="assets/app.js?v=0.1.1"></script>
+    <script type="module" src="assets/app.js?v=1.1.0-taskstate"></script>
   </body>
 </html>

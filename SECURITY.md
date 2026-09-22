@@ -22,3 +22,9 @@ public disclosure.
 
 The UI confirmation mechanism reduces accidental actions; it is not an
 authorization boundary and does not replace server-side IRIS security.
+
+The client refuses cross-origin request and async-status URLs before attaching
+an access token. Changing the selected connection cancels in-flight login or
+async polling results. Guided access updates also repeat their precondition read
+immediately before `PUT` and block stale or malformed state. These controls are
+defense in depth; they do not make an untrusted browser environment safe.

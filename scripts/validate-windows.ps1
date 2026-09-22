@@ -54,6 +54,28 @@ function Test-HttpResource {
     "PASS HTTP $($response.StatusCode) $Url" | Tee-Object -FilePath $ReportPath -Append
 }
 
+function Get-ContainerState {
+    param([Parameter(Mandatory = $true)][string]$ContainerId)
+
+    $state = & docker inspect `
+        --format "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" `
+        $ContainerId 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect IRIS container: $($state -join ' ')"
+    }
+    return ($state | Select-Object -Last 1).ToString().Trim()
+}
+
+function Assert-ContainerHealthy {
+    param([Parameter(Mandatory = $true)][string]$ContainerId)
+
+    $state = Get-ContainerState -ContainerId $ContainerId
+    if ($state -ne "running|healthy") {
+        throw "IRIS container is not stably healthy: $state"
+    }
+    "PASS container state $state" | Tee-Object -FilePath $ReportPath -Append
+}
+
 Push-Location $ProjectRoot
 try {
     Invoke-RecordedCommand -Executable "docker" -Arguments @("version")
@@ -65,18 +87,28 @@ try {
     Invoke-RecordedCommand -Executable "docker" -Arguments @("compose", "up", "-d")
     Invoke-RecordedCommand -Executable "docker" -Arguments @("compose", "ps")
 
+    $containerId = (& docker compose ps -q iris 2>&1 | Select-Object -Last 1).ToString().Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($containerId)) {
+        throw "Docker Compose did not return the IRIS container identifier"
+    }
+
     $ready = $false
     for ($attempt = 1; $attempt -le 60; $attempt++) {
         try {
-            Test-HttpResource -Url $PortalUrl
-            $ready = $true
-            break
+            $state = Get-ContainerState -ContainerId $containerId
+            if ($state -eq "running|healthy") {
+                Test-HttpResource -Url $PortalUrl
+                $ready = $true
+                break
+            }
+            "Waiting for healthy IRIS container ($attempt/60): $state" |
+                Tee-Object -FilePath $ReportPath -Append
         }
         catch {
-            "Waiting for IRIS web gateway ($attempt/60): $($_.Exception.Message)" |
+            "Waiting for IRIS readiness ($attempt/60): $($_.Exception.Message)" |
                 Tee-Object -FilePath $ReportPath -Append
-            Start-Sleep -Seconds 5
         }
+        Start-Sleep -Seconds 5
     }
 
     if (-not $ready) {
@@ -85,7 +117,15 @@ try {
 
     Test-HttpResource -Url "${PortalBaseUrl}assets/styles.css"
     Test-HttpResource -Url "${PortalBaseUrl}assets/api.js"
+    Test-HttpResource -Url "${PortalBaseUrl}assets/explorer.js"
+    Test-HttpResource -Url "${PortalBaseUrl}assets/sanitization.js"
+    Test-HttpResource -Url "${PortalBaseUrl}assets/operations.js"
     Test-HttpResource -Url "${PortalBaseUrl}assets/app.js"
+
+    # Reject a transient HTTP success from a container that exits immediately
+    # after its post-start work.
+    Start-Sleep -Seconds 5
+    Assert-ContainerHealthy -ContainerId $containerId
 
     "`nVALIDATION RESULT: PASS" | Tee-Object -FilePath $ReportPath -Append
     Write-Host "`nValidation passed. Open $PortalUrl"
