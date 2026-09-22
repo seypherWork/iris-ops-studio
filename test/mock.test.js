@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { IrisAdminClient, unwrapIrisResult } from "../web/assets/api.js";
+import { IrisAdminClient, unwrapIrisResult } from "../web/assets/api.js?v=1.1.0";
+import { buildRoleResourceMutation, buildUserRoleMutation, captureVerificationBaseline, evaluatePrecondition, evaluateVerification, inferVerification } from "../web/assets/operations.js";
 
 test("mock server serves the portal and representative API operations", async (t) => {
   const port = 43173;
@@ -20,6 +21,10 @@ test("mock server serves the portal and representative API operations", async (t
   const page = await fetch(`http://127.0.0.1:${port}/`);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /IRIS Ops Studio/);
+  for (const asset of ["styles.css", "api.js", "sanitization.js", "operations.js", "app.js"]) {
+    const response = await fetch(`http://127.0.0.1:${port}/assets/${asset}`);
+    assert.equal(response.status, 200, asset);
+  }
 
   const info = await fetch(`http://127.0.0.1:${port}/api/admin/info`);
   assert.equal(info.status, 200);
@@ -32,6 +37,8 @@ test("mock server serves the portal and representative API operations", async (t
 
   const processPayload = await client.request("/v2/processes");
   assert.equal(unwrapIrisResult(processPayload)[0].Pid, 8421);
+  assert.equal(unwrapIrisResult(processPayload)[0].CanBeSuspended, true);
+  await assert.rejects(client.request("/v2/process/suspend?id=8407", { method: "POST" }), (error) => error.status === 409);
 
   const databases = unwrapIrisResult(await client.request("/v2/databases"));
   assert.equal(databases[0].Status, "Mounted/RW");
@@ -40,9 +47,36 @@ test("mock server serves the portal and representative API operations", async (t
   const oauthServers = unwrapIrisResult(await client.request("/v2/security/oauth2/client/server-definitions"));
   assert.equal(oauthServers[0].ID, "auth0-prod");
 
-  const operation = unwrapIrisResult(await client.request("/v2/process/suspend?id=2184", { method: "POST" }));
+  const operation = unwrapIrisResult(await client.request("/v2/process/suspend?id=8421", { method: "POST" }));
   assert.equal(operation.accepted, true);
-  assert.equal(operation.path, "/api/admin/v2/process/suspend?id=2184");
+  const readback = unwrapIrisResult(await client.request("/v2/process?id=8421"));
+  assert.equal(readback.State, "SUSP");
+  await client.request("/v2/process/resume?id=8421", { method: "POST" });
+  assert.equal(unwrapIrisResult(await client.request("/v2/process?id=8421")).State, "RUN");
+
+  const taskPlan = captureVerificationBaseline(inferVerification("POST", "/v2/task/run?id=17"), await client.request("/v2/task/info?id=17"));
+  await client.request("/v2/task/run?id=17", { method: "POST", body: { RunNow: true } });
+  assert.equal(evaluateVerification(taskPlan, await client.request("/v2/task/info?id=17")).status, "verified");
+
+  const userPath = "/v2/security/user?name=IrisOps_TestUser";
+  const userBefore = await client.request(userPath);
+  const userChange = buildUserRoleMutation(userBefore, "AuditRead", "assign");
+  assert.equal(evaluatePrecondition(userChange.precondition, await client.request(userPath)).ok, true);
+  await client.request(userPath, { method: "PUT", body: userChange.body });
+  assert.equal(evaluateVerification(userChange.verification, await client.request(userPath)).status, "verified");
+
+  const rolePath = "/v2/security/role?name=IrisOps_TestRole";
+  const roleBefore = await client.request(rolePath);
+  const roleChange = buildRoleResourceMutation(roleBefore, "%Admin_Secure", "RUW", "grant");
+  assert.equal(evaluatePrecondition(roleChange.precondition, await client.request(rolePath)).ok, true);
+  await client.request(rolePath, { method: "PUT", body: roleChange.body });
+  assert.equal(evaluateVerification(roleChange.verification, await client.request(rolePath)).status, "verified");
+
+  const taskHistory = unwrapIrisResult(await client.request("/v2/task/history?maxRows=10"));
+  assert.equal(taskHistory[0].TaskId, 17);
+
+  await client.request("/v2/process/terminate?id=8421", { method: "POST" });
+  await assert.rejects(client.request("/v2/process?id=8421"), (error) => error.status === 404);
 
   const audit = await client.requestAsync("/v2/security/audit/records?maxRows=100", { pollIntervalMs: 0 });
   assert.equal(audit[0].AuditIndex, 7);

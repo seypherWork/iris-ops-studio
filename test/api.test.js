@@ -10,10 +10,11 @@ import {
   joinApiPath,
   normalizeBaseUrl,
   redactSensitive,
+  redactSensitiveText,
   resolveApiUrl,
   resolveServerLocation,
   unwrapIrisResult,
-} from "../web/assets/api.js";
+} from "../web/assets/api.js?v=1.1.0";
 
 test("catalog includes unique read workflows for infrastructure and OAuth", () => {
   const pairs = endpointCatalog.map(({ method, path }) => `${method} ${path}`);
@@ -47,6 +48,9 @@ test("normalizes and joins API paths", () => {
   assert.throws(() => resolveApiUrl("https://iris.example/api/admin", "https://attacker.example/collect"), /cross-origin/);
   assert.throws(() => resolveApiUrl("https://iris.example/api/admin", "//attacker.example/collect"), /cross-origin/);
   assert.throws(() => resolveApiUrl("https://iris.example/api/admin", "\\\\attacker.example/collect"), /cross-origin/);
+  for (const disguised of ["/https://attacker.example/collect", "/http://attacker.example/collect", "/ https://attacker.example/collect", "/\thttps://attacker.example/collect"]) {
+    assert.throws(() => resolveApiUrl("https://iris.example/api/admin", disguised), /unsafe|cross-origin/);
+  }
   assert.equal(appendQuery("/v2/process/suspend", { id: 41 }), "/v2/process/suspend?id=41");
   assert.equal(appendQuery("/v2/tasks?maxRows=20", { filter: "READ WRITE" }), "/v2/tasks?maxRows=20&filter=READ+WRITE");
   assert.deepEqual(unwrapIrisResult({ status: {}, result: [{ Id: 1 }] }), [{ Id: 1 }]);
@@ -73,19 +77,77 @@ test("redacts nested sensitive strings without hiding safe metadata", () => {
   });
 });
 
-test("client sends bearer authentication and parses JSON", async () => {
-  let observed;
+test("redacts credential-shaped text embedded in otherwise safe messages", () => {
+  const safe = redactSensitiveText("Denied Bearer abc.def access_token=top-secret password:guess eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvcHMifQ.signature");
+  assert.doesNotMatch(safe, /abc\.def|top-secret|guess|eyJhbGci/);
+  assert.match(safe, /\[REDACTED\]/);
+});
+
+test("client sends bearer authentication, refreshes an expired token, and parses JSON", async () => {
+  const observed = [];
   const client = new IrisAdminClient({
     baseUrl: "/api/admin/",
-    token: "test-token",
+    token: "expired-token",
+    refreshToken: "refresh-one",
     fetchImpl: async (url, options) => {
-      observed = { url, options };
+      observed.push({ url, options });
+      if (url === "/api/admin/info" && observed.length === 1) {
+        return new Response(JSON.stringify({ message: "Expired" }), { status: 401 });
+      }
+      if (url === "/api/admin/refresh") {
+        assert.equal(options.headers.Authorization, undefined);
+        assert.deepEqual(JSON.parse(options.body), { refresh_token: "refresh-one", grant_type: "refresh_token" });
+        return new Response(JSON.stringify({ result: { access_token: "renewed-token", refresh_token: "refresh-two" } }), { status: 200 });
+      }
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     },
   });
   assert.deepEqual(await client.request("/info"), { ok: true });
-  assert.equal(observed.url, "/api/admin/info");
-  assert.equal(observed.options.headers.Authorization, "Bearer test-token");
+  assert.deepEqual(observed.map(({ url }) => url), ["/api/admin/info", "/api/admin/refresh", "/api/admin/info"]);
+  assert.equal(observed[0].options.headers.Authorization, "Bearer expired-token");
+  assert.equal(observed[2].options.headers.Authorization, "Bearer renewed-token");
+  assert.equal(client.token, "renewed-token");
+  assert.equal(client.refreshToken, "refresh-two");
+});
+
+test("client refuses disguised absolute targets before fetch can receive a token", async () => {
+  let calls = 0;
+  const client = new IrisAdminClient({
+    baseUrl: "https://iris.example/api/admin",
+    token: "must-not-leak",
+    fetchImpl: async () => { calls += 1; return new Response("{}"); },
+  });
+  await assert.rejects(client.request("/https://attacker.example/collect"), /unsafe|cross-origin/);
+  await assert.rejects(client.request("https://attacker.example/collect", { resolvedUrl: true }), /cross-origin/);
+  assert.equal(calls, 0);
+});
+
+test("changing an instance without an explicit token clears the previous credential", async () => {
+  const client = new IrisAdminClient({ baseUrl: "https://one.example/api/admin", token: "old-token", refreshToken: "old-refresh", fetchImpl: async () => new Response("{}") });
+  client.setConnection({ baseUrl: "https://two.example/api/admin" });
+  assert.equal(client.token, "");
+  assert.equal(client.refreshToken, "");
+  await assert.rejects(
+    client.refreshAccessToken({ baseUrl: "https://one.example/api/admin", expectedRevision: 0 }),
+    /connection changed/,
+  );
+
+  let refreshClient;
+  refreshClient = new IrisAdminClient({
+    baseUrl: "https://old.example/api/admin",
+    token: "expired-token",
+    refreshToken: "old-refresh",
+    fetchImpl: async (url) => {
+      if (url.endsWith("/refresh")) {
+        refreshClient.setConnection({ baseUrl: "https://new.example/api/admin", token: "new-session-token" });
+        return new Response(JSON.stringify({ result: { access_token: "stale-token", refresh_token: "stale-refresh" } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ message: "Expired" }), { status: 401 });
+    },
+  });
+  await assert.rejects(refreshClient.request("/v2/processes"), /connection changed/);
+  assert.equal(refreshClient.baseUrl, "https://new.example/api/admin");
+  assert.equal(refreshClient.token, "new-session-token");
 });
 
 test("default browser fetch keeps its required global receiver", async () => {
@@ -108,6 +170,7 @@ test("login does not return a readable token", async () => {
   const client = new IrisAdminClient({ fetchImpl: async () => new Response(JSON.stringify({ result: { access_token: "secret-value", refresh_token: "refresh-value" } }), { status: 200 }) });
   const response = await client.login("operator", "password");
   assert.equal(client.token, "secret-value");
+  assert.equal(client.refreshToken, "refresh-value");
   assert.equal(response.result.access_token, "••••••••");
   assert.equal(response.result.refresh_token, "••••••••");
 });
@@ -118,12 +181,36 @@ test("login rejects a successful response that contains no access token", async 
   assert.equal(client.token, "");
 });
 
+test("login cannot install a token after the selected connection changes", async () => {
+  let client;
+  client = new IrisAdminClient({
+    baseUrl: "https://old.example/api/admin",
+    fetchImpl: async () => {
+      client.setConnection({ baseUrl: "https://new.example/api/admin", token: "NEW_TOKEN" });
+      return new Response(JSON.stringify({ result: { access_token: "OLD_TOKEN" } }), { status: 200 });
+    },
+  });
+  await assert.rejects(client.login("operator", "password"), /connection changed/);
+  assert.equal(client.baseUrl, "https://new.example/api/admin");
+  assert.equal(client.token, "NEW_TOKEN");
+});
+
 test("client wraps non-success responses in a redacted typed error", async () => {
   const client = new IrisAdminClient({ fetchImpl: async () => new Response(JSON.stringify({ message: "Denied", token: "leak" }), { status: 403 }) });
   await assert.rejects(
     client.request("/v2/security/users"),
     (error) => error instanceof IrisApiError && error.status === 403 && error.payload.token === "••••••••",
   );
+});
+
+test("client redacts credentials embedded in a server error message", async () => {
+  const client = new IrisAdminClient({ fetchImpl: async () => new Response("Denied Bearer server-secret; access_token=also-secret", { status: 403 }) });
+  await assert.rejects(client.request("/v2/security/users"), (error) => {
+    assert.ok(error instanceof IrisApiError);
+    assert.doesNotMatch(error.message, /server-secret|also-secret/);
+    assert.doesNotMatch(error.payload.message, /server-secret|also-secret/);
+    return true;
+  });
 });
 
 test("client converts aborted requests to a timeout error", async () => {
@@ -147,6 +234,28 @@ test("client follows IRIS asynchronous task locations and returns the result", a
   assert.deepEqual(observed, ["/api/admin/v2/security/audit/records", "/api/admin/v2/async-result?id=task-7", "/api/admin/v2/async-result?id=task-7"]);
 });
 
+test("relative-base async polling accepts the browser's absolute response URL on the same origin", async () => {
+  const observed = [];
+  const accepted = new Response(JSON.stringify({ result: { GUID: "task-browser" } }), {
+    status: 202,
+    headers: { Location: "/api/admin/v2/async-result?id=task-browser" },
+  });
+  Object.defineProperty(accepted, "url", { value: "https://iris.example/api/admin/v2/security/audit/records" });
+  const responses = [
+    accepted,
+    new Response(JSON.stringify({ result: { State: "Finished", Result: ["ok"] } }), { status: 200 }),
+  ];
+  const client = new IrisAdminClient({ baseUrl: "/api/admin", token: "same-origin-token", fetchImpl: async (url) => {
+    observed.push(url);
+    return responses.shift();
+  } });
+  assert.deepEqual(await client.requestAsync("/v2/security/audit/records", { pollIntervalMs: 0 }), ["ok"]);
+  assert.deepEqual(observed, [
+    "/api/admin/v2/security/audit/records",
+    "https://iris.example/api/admin/v2/async-result?id=task-browser",
+  ]);
+});
+
 test("client rejects cross-origin asynchronous task locations before polling", async () => {
   let calls = 0;
   const client = new IrisAdminClient({
@@ -157,6 +266,49 @@ test("client rejects cross-origin asynchronous task locations before polling", a
     },
   });
   await assert.rejects(client.requestAsync("/v2/security/audit/records"), /cross-origin/);
+  assert.equal(calls, 1);
+});
+
+test("connection changes cancel async polling without reusing a token on another instance", async () => {
+  const observed = [];
+  let client;
+  client = new IrisAdminClient({
+    baseUrl: "https://old.example/api/admin",
+    token: "OLD_TOKEN",
+    fetchImpl: async (url, options) => {
+      observed.push({ url, authorization: options.headers.Authorization });
+      if (observed.length === 1) {
+        return new Response(JSON.stringify({ result: { GUID: "task-race" } }), {
+          status: 202,
+          headers: { Location: "https://old.example/api/admin/v2/async-result?id=task-race" },
+        });
+      }
+      client.setConnection({ baseUrl: "https://new.example/api/admin", token: "NEW_TOKEN" });
+      return new Response(JSON.stringify({ result: { State: "Finished", Result: "stale-result" } }), { status: 200 });
+    },
+  });
+  await assert.rejects(
+    client.requestAsync("/v2/security/audit/records", { pollIntervalMs: 0, maxPolls: 3 }),
+    /connection changed|polling was canceled/i,
+  );
+  assert.equal(observed.length, 2);
+  assert.ok(observed.every((request) => request.url.startsWith("https://old.example/")));
+  assert.ok(observed.every((request) => request.authorization === "Bearer OLD_TOKEN"));
+});
+
+test("connection changes cancel an async request immediately after acceptance", async () => {
+  let client;
+  let calls = 0;
+  client = new IrisAdminClient({
+    baseUrl: "https://old.example/api/admin",
+    token: "OLD_TOKEN",
+    fetchImpl: async () => {
+      calls += 1;
+      client.setConnection({ baseUrl: "https://new.example/api/admin", token: "NEW_TOKEN" });
+      return new Response(JSON.stringify({ result: { GUID: "old-task" } }), { status: 202 });
+    },
+  });
+  await assert.rejects(client.requestAsync("/v2/security/audit/records"), /connection changed/);
   assert.equal(calls, 1);
 });
 
