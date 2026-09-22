@@ -1,5 +1,8 @@
 # IRIS Ops Studio: a safety-first operations console for InterSystems IRIS
 
+> Historical v0.1 publication snapshot. For the v0.2 candidate, see
+> [Beyond HTTP 200](community-article-verifiable-operations-en.md).
+
 Published on the [InterSystems Developer Community](https://community.intersystems.com/post/iris-ops-studio-safety-first-operations-console-intersystems-iris).
 
 System administration tools have to solve two different problems at the same time. They must make useful information easy to reach, and they must make dangerous actions difficult to perform by accident.
@@ -40,7 +43,7 @@ Requests are classified as read-only, state-changing or destructive. Read operat
 
 IRIS authorization remains authoritative. The interface does not grant privileges or attempt to work around the connected user's roles. The additional controls exist to reduce accidental actions at the operator layer.
 
-Sensitive response fields are redacted recursively before they are rendered. Passwords, secrets, tokens, credentials and private keys are replaced even when they appear inside nested objects or arrays. The login password is cleared after every authentication outcome and is never written to local storage, session storage, logs or URLs. The access token stays only in page memory and disappears on reload.
+Sensitive response fields are redacted recursively before they are rendered. Passwords, secrets, tokens, credentials and private keys are replaced even when they appear inside nested objects or arrays. The login password is cleared after every authentication outcome and is never written to local storage, session storage, logs or URLs. Access and refresh tokens stay only in page memory, rotate through the official IRIS refresh flow, and disappear on reload.
 
 ## Verifying the real behavior
 

@@ -1,5 +1,8 @@
 # IRIS Ops Studio: una consola operativa centrada en la seguridad para InterSystems IRIS
 
+> Instantánea histórica de la publicación v0.1. Para la candidata v0.2, consulta
+> [Más allá de HTTP 200](community-article-verifiable-operations-es.md).
+
 Esta es la traducción al español del [artículo original en inglés](https://community.intersystems.com/post/iris-ops-studio-safety-first-operations-console-intersystems-iris).
 
 Las herramientas de administración de sistemas deben resolver dos problemas al mismo tiempo: facilitar el acceso a la información necesaria y dificultar que una acción peligrosa se ejecute por accidente.
@@ -40,7 +43,7 @@ Las peticiones se clasifican como de solo lectura, cambios de estado o destructi
 
 La autorización de IRIS sigue siendo la fuente de verdad. La interfaz no concede privilegios ni intenta eludir los roles del usuario conectado. Estos controles adicionales reducen la posibilidad de ejecutar cambios accidentales desde la capa del operador.
 
-Los campos sensibles se ocultan de forma recursiva antes de mostrar una respuesta. Contraseñas, secretos, tokens, credenciales y claves privadas se sustituyen incluso cuando aparecen dentro de objetos o listas anidadas. La contraseña de inicio de sesión se borra después de cualquier resultado de autenticación y nunca se escribe en el almacenamiento del navegador, logs o direcciones URL. El token de acceso permanece únicamente en la memoria de la página y desaparece al recargarla.
+Los campos sensibles se ocultan de forma recursiva antes de mostrar una respuesta. Contraseñas, secretos, tokens, credenciales y claves privadas se sustituyen incluso cuando aparecen dentro de objetos o listas anidadas. La contraseña de inicio de sesión se borra después de cualquier resultado de autenticación y nunca se escribe en el almacenamiento del navegador, logs o direcciones URL. Los tokens de acceso y renovación permanecen únicamente en la memoria de la página, rotan mediante el flujo oficial de IRIS y desaparecen al recargarla.
 
 ## Comprobar el comportamiento real
 

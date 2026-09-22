@@ -14,7 +14,7 @@ whenever demo fixtures are on screen.
 > SysAdmin API. It brings common monitoring and administration workflows into
 > one responsive interface.
 
-## 0:10–0:28 — Operational overview
+## 0:10–0:24 — Operational overview
 
 **Screen:** Point to resource posture, processes, storage, tasks, and security
 summary cards. Briefly open and close the navigation on a narrow viewport.
@@ -25,49 +25,61 @@ summary cards. Briefly open and close the navigation on a narrow viewport.
 > tasks, and security signals without moving between unrelated tools. The
 > built-in safe demo is clearly labelled and needs no credentials.
 
-## 0:28–0:50 — Safety controls
+## 0:24–0:40 — Incident Timeline
 
-**Screen:** Open Processes. Select a process, choose Terminate, and show the
-confirmation dialog. Type an incorrect phrase first, then the exact generated
-phrase. Cancel before submitting the demo action.
-
-**Voice-over:**
-
-> Every request is classified before it is sent. Read operations stay quick,
-> while state changes require an exact confirmation phrase. Destructive actions
-> receive stronger visual treatment so their impact is clear before execution.
-
-## 0:50–1:08 — Coverage and API explorer
-
-**Screen:** Move through Tasks, Storage and devices, OAuth 2.0, and Audit. End in
-the API Explorer and show the read, mutation, and destructive labels.
+**Screen:** Open Logs & audit. Filter first by Tasks and then by Critical. Show
+the source health row and correlation identifiers.
 
 **Voice-over:**
 
-> The portal covers processes, tasks, storage, access, web applications,
-> protected-asset metadata, OAuth 2.0, audit records, and 27 catalogued SysAdmin
-> operations. Sensitive fields are recursively redacted before responses reach
-> the screen.
+> Incident Timeline normalizes security audit records, task execution history,
+> and Ops Studio's own session journal. Operators can filter across subsystem,
+> severity, entity, actor, message, and correlation ID from one view.
 
-## 1:08–1:25 — Live IRIS evidence
+## 0:40–1:02 — Verifiable safety controls
 
-**Screen:** Switch to a disposable IRIS Community 2026.2 instance. Load live
-process and task data, then briefly show the successful validation report.
+**Screen:** Open Processes, choose Suspend, and show the current state, expected
+state, target-bound phrase, and readback endpoint. Enter the exact phrase and
+execute the safe-demo transition. Click Journal and show the `demo-verified`
+entry.
 
 **Voice-over:**
 
-> The same static client connects to the official IRIS SysAdmin REST API. It has
-> been verified on IRIS Community 2026.2 with automated tests covering the
-> client, safety rules, redaction, asynchronous jobs, interface contracts, and
-> the mock server.
+> A successful HTTP response is not treated as proof. Built-in changes follow
+> Preview, Confirm, Execute, and Readback. Only a matching second read is marked
+> verified; custom operations remain explicitly unverified.
 
-## 1:25–1:30 — Close
+## 1:02–1:18 — Permission management
+
+**Screen:** Open Access control. Select a user and role, choose Assign role, and
+show the schema-limited before/after preview. Cancel before execution, then show
+the role-resource workflow.
+
+**Voice-over:**
+
+> Access control is no longer inventory-only. User-role and role-resource
+> changes preserve unrelated settings, send only documented mutable fields,
+> require an exact confirmation, and verify the result with a second GET.
+
+## 1:18–1:27 — Coverage and evidence
+
+**Screen:** Briefly show the API Explorer's 34 known operations and then the
+validation report/test result.
+
+**Voice-over:**
+
+> The same zero-dependency client connects to the official IRIS SysAdmin REST
+> API. The public release was validated on IRIS Community 2026.2, and the new
+> permission, readback, journal, and timeline contracts are covered by 57
+> automated tests.
+
+## 1:27–1:30 — Close
 
 **Screen:** Return to the Overview and finish on the product name.
 
 **Voice-over:**
 
-> IRIS Ops Studio: routine operations, with operator intent made explicit.
+> IRIS Ops Studio: operational changes with evidence, not assumptions.
 
 ## Recording checklist
 
@@ -76,4 +88,3 @@ process and task data, then briefly show the successful validation report.
 - Do not claim publication, contest acceptance, or an award before confirmation.
 - Check that small text remains readable after the video platform compresses it.
 - Add the final Open Exchange listing URL after publication.
-

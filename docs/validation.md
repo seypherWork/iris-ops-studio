@@ -35,6 +35,12 @@ Use this checklist against the exact IRIS version used in the contest demo.
 - [ ] Suspend process cannot be submitted without the exact confirmation phrase.
 - [ ] Terminate process is labeled destructive.
 - [ ] Task run/suspend/resume requests include the selected task identifier.
+- [ ] Process suspend/terminate controls are disabled when the API capability
+      flags are false.
+- [ ] User-role and role-resource updates block stale preflight state before
+      sending `PUT` and verify the complete resulting collections.
+- [ ] Task run remains pending while status is `-1` and is not verified unless
+      a new successful `LastFinished` value is observed.
 - [ ] Arbitrary POST, PUT, and DELETE requests in the explorer require typed
       confirmation.
 - [ ] Cancel, purge, revoke, deactivate, and clear-count routes are labeled
