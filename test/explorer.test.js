@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { IrisAdminClient } from "../web/assets/api.js?v=1.1.0";
+import { IrisAdminClient } from "../web/assets/api.js?v=1.2.0";
 import {
   catalogSelectionValue,
   explorerOutcomeLabel,
@@ -43,6 +43,8 @@ test("explorer rejects unsafe destinations and unsupported demo requests", () =>
   assert.deepEqual(prepareExplorerRequest({ method: "GET", path: "/v2/does-not-exist", demo: false }), {
     method: "GET", path: "/v2/does-not-exist", body: undefined,
   });
+  assert.throws(() => prepareExplorerRequest({ method: "GET", path: "https://iris.example/csp/other", baseUrl: "https://iris.example/api/admin" }), /inside the selected/);
+  assert.throws(() => prepareExplorerRequest({ method: "GET", path: "/api/admin/../mgmnt", baseUrl: "/api/admin" }), /inside the selected/);
 });
 
 test("explorer parses JSON only for body-capable methods and rejects malformed JSON", () => {

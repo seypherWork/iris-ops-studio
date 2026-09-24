@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { buildWebAppAvailabilityMutation } from "../web/assets/operations.js";
 import {
   IrisAdminClient,
   IrisApiError,
@@ -14,7 +15,7 @@ import {
   resolveApiUrl,
   resolveServerLocation,
   unwrapIrisResult,
-} from "../web/assets/api.js?v=1.1.0";
+} from "../web/assets/api.js?v=1.2.0";
 
 test("catalog includes unique read workflows for infrastructure and OAuth", () => {
   const pairs = endpointCatalog.map(({ method, path }) => `${method} ${path}`);
@@ -59,11 +60,15 @@ test("normalizes and joins API paths", () => {
 test("classifies read, mutation, and destructive operations", () => {
   assert.equal(classifySafety("GET", "/v2/processes"), "read");
   assert.equal(classifySafety("POST", "/v2/security/audit/records"), "read");
+  assert.equal(classifySafety("POST", "/v2/task/run?id=17&note=/security/audit/records"), "mutation");
+  assert.equal(classifySafety("POST", "/v2/security/audit/records/other"), "mutation");
+  assert.equal(classifySafety("POST", "/v2/security/audit/records?maxRows=20"), "read");
   assert.equal(classifySafety("POST", "/v2/task/run"), "mutation");
   assert.equal(classifySafety("POST", "/v2/process/terminate"), "destructive");
   assert.equal(classifySafety("POST", "/v2/async-result/cancel?id=7"), "destructive");
   assert.equal(classifySafety("DELETE", "/v2/web-app"), "destructive");
   assert.equal(confirmationPhrase("post", "/v2/process/terminate?pid=41"), "POST PROCESS TERMINATE");
+  assert.notEqual(confirmationPhrase("POST", "/v2/task/run?id=1000"), confirmationPhrase("POST", "/v2/task/run?id=2000"));
 });
 
 test("redacts nested sensitive strings without hiding safe metadata", () => {
@@ -81,6 +86,21 @@ test("redacts credential-shaped text embedded in otherwise safe messages", () =>
   const safe = redactSensitiveText("Denied Bearer abc.def access_token=top-secret password:guess eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvcHMifQ.signature");
   assert.doesNotMatch(safe, /abc\.def|top-secret|guess|eyJhbGci/);
   assert.match(safe, /\[REDACTED\]/);
+  assert.doesNotMatch(redactSensitiveText("client_secret=FAKE-ONLY auth_header=FAKE-HEADER"), /FAKE-ONLY|FAKE-HEADER/);
+});
+
+test("API keys and authorization headers are redacted before an explorer response can be copied", async () => {
+  const client = new IrisAdminClient({
+    token: "test-token",
+    fetchImpl: async () => new Response(JSON.stringify({ result: {
+      ApiKey: "FAKE-KEY-123", Authorization: "Basic FAKE-BASE64", ClientSecret: "FAKE-SECRET",
+    } }), { status: 200 }),
+  });
+  const response = await client.request("/v2/example");
+  assert.deepEqual(response.result, {
+    ApiKey: "••••••••", Authorization: "••••••••", ClientSecret: "••••••••",
+  });
+  assert.doesNotMatch(redactSensitiveText("Authorization: Basic FAKE-BASE64"), /FAKE-BASE64/);
 });
 
 test("client sends bearer authentication, refreshes an expired token, and parses JSON", async () => {
@@ -108,6 +128,58 @@ test("client sends bearer authentication, refreshes an expired token, and parses
   assert.equal(observed[2].options.headers.Authorization, "Bearer renewed-token");
   assert.equal(client.token, "renewed-token");
   assert.equal(client.refreshToken, "refresh-two");
+});
+
+test("relative-base async polling renews the token without changing origins", async () => {
+  const calls = [];
+  const client = new IrisAdminClient({ baseUrl: "/api/admin", token: "FAKE-EXPIRED", refreshToken: "FAKE-REFRESH", fetchImpl: async (url, options) => {
+    calls.push({ url, method: options.method });
+    if (url.endsWith("/v2/security/audit/records")) {
+      const accepted = new Response(JSON.stringify({ result: { GUID: "fake-job" } }), {
+        status: 202, headers: { Location: "/api/admin/v2/async-result?id=fake-job" },
+      });
+      Object.defineProperty(accepted, "url", { value: "https://iris.example/api/admin/v2/security/audit/records" });
+      return accepted;
+    }
+    if (url.endsWith("/refresh")) return new Response(JSON.stringify({ result: { access_token: "FAKE-NEW", refresh_token: "FAKE-NEW-REFRESH" } }));
+    if (url.includes("/async-result")) return calls.filter((call) => call.url.includes("/async-result")).length === 1
+      ? new Response(JSON.stringify({ message: "Expired" }), { status: 401 })
+      : new Response(JSON.stringify({ result: { State: "finished", Result: [{ AuditIndex: 1 }] } }));
+    throw new Error(`Unexpected URL: ${url}`);
+  } });
+  assert.deepEqual(await client.requestAsync("/v2/security/audit/records", { pollIntervalMs: 0 }), [{ AuditIndex: 1 }]);
+  assert.ok(calls.some((call) => call.url === "/api/admin/refresh"));
+  assert.equal(calls.length, 4);
+});
+
+test("official structured errors retain a redacted useful summary", async () => {
+  const client = new IrisAdminClient({ fetchImpl: async () => new Response(JSON.stringify({
+    status: { summary: "Missing test privilege; client_secret=FAKE-ONLY", Errors: ["More test detail"] },
+  }), { status: 403 }) });
+  await assert.rejects(client.request("/v2/task/info?id=1000"), (error) => {
+    assert.match(error.message, /Missing test privilege/);
+    assert.doesNotMatch(error.message, /FAKE-ONLY/);
+    return true;
+  });
+});
+
+test("guided web-app updates never write redacted configuration values", async () => {
+  const appName = "/api/IrisOps_TestWeb";
+  const response = { result: {
+    NameSpace: "USER", IsNameSpaceDefault: false, Enabled: true,
+    ChangePasswordPage: "change-page.csp", JWTAccessTokenTimeout: 120,
+    Description: "Disposable fixture",
+  } };
+  const client = new IrisAdminClient({ fetchImpl: async () => new Response(JSON.stringify(response)) });
+  const path = `/v2/web-app?name=${encodeURIComponent(appName)}`;
+  const display = await client.request(path);
+  assert.equal(display.result.ChangePasswordPage, "••••••••");
+  assert.throws(() => buildWebAppAvailabilityMutation(display, appName, false), /redacted/);
+  const internal = await client.request(path, { redactResponse: false });
+  const plan = buildWebAppAvailabilityMutation(internal, appName, false);
+  assert.equal(plan.body.ChangePasswordPage, "change-page.csp");
+  assert.equal(plan.body.JWTAccessTokenTimeout, 120);
+  assert.equal(plan.body.Enabled, false);
 });
 
 test("client refuses disguised absolute targets before fetch can receive a token", async () => {
