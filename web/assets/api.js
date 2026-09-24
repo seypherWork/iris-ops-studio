@@ -1,6 +1,6 @@
-import { redactSensitiveText } from "./sanitization.js?v=1.1.0";
+import { redactSensitiveText } from "./sanitization.js?v=1.2.0";
 
-export { redactSensitiveText } from "./sanitization.js?v=1.1.0";
+export { redactSensitiveText } from "./sanitization.js?v=1.2.0";
 
 export class IrisApiError extends Error {
   constructor(message, { status = 0, payload = null, path = "" } = {}) {
@@ -101,14 +101,26 @@ export function unwrapIrisResult(payload) {
 
 export function classifySafety(method, path) {
   const verb = String(method || "GET").toUpperCase();
-  const route = String(path || "").toLowerCase();
+  let route;
+  try { route = new URL(String(path || ""), "https://iris.invalid").pathname.toLowerCase(); }
+  catch { return "mutation"; }
   if (verb === "GET" || verb === "HEAD") return "read";
-  if (verb === "POST" && /\/security\/audit\/records(?:\?|$)/.test(route)) return "read";
-  if (verb === "DELETE" || /(terminate|purge|truncate|revoke|deactivate|clear-count|\/cancel(?:\?|$))/.test(route)) return "destructive";
+  if (verb === "POST" && /(?:^|\/)v2\/security\/audit\/records$/.test(route)) return "read";
+  if (verb === "DELETE" || /(terminate|purge|truncate|revoke|deactivate|clear-count|\/cancel$)/.test(route)) return "destructive";
   return "mutation";
 }
 
-const SECRET_KEY = /(password|secret|token|private.?key|credential)/i;
+const SECRET_KEY = /(password|secret|token|private.?key|credential|api[_. -]?key|authorization|auth[_. -]?header)/i;
+
+function irisErrorMessage(payload, status) {
+  const details = payload?.status;
+  const errors = Array.isArray(details?.Errors) ? details.Errors : [];
+  const firstError = errors.find((entry) => typeof entry === "string" || entry && typeof entry === "object");
+  const detail = typeof firstError === "string" ? firstError
+    : firstError?.Message || firstError?.message || firstError?.Error || firstError?.error;
+  const value = payload?.message || payload?.error || details?.summary || detail;
+  return redactSensitiveText(typeof value === "string" && value.trim() ? value.slice(0, 500) : `IRIS request failed with HTTP ${status}`);
+}
 
 export function redactSensitive(value) {
   if (Array.isArray(value)) return value.map(redactSensitive);
@@ -129,8 +141,10 @@ function redactSecretValue(value) {
 }
 
 export function confirmationPhrase(method, path) {
-  const segment = String(path).split("?")[0].split("/").filter(Boolean).slice(-2).join(" ").toUpperCase();
-  return `${String(method).toUpperCase()} ${segment || "RESOURCE"}`;
+  const url = new URL(String(path), "https://iris.invalid");
+  const segment = url.pathname.split("/").filter(Boolean).slice(-2).join(" ").toUpperCase();
+  const target = url.searchParams.get("id") || url.searchParams.get("name");
+  return `${String(method).toUpperCase()} ${segment || "RESOURCE"}${target ? ` ${redactSensitiveText(target).slice(0, 80).toUpperCase()}` : ""}`;
 }
 
 export class IrisAdminClient {
@@ -142,6 +156,7 @@ export class IrisAdminClient {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.connectionRevision = 0;
+    this.successfulRequests = 0;
   }
 
   setConnection(connection = {}) {
@@ -251,7 +266,10 @@ export class IrisAdminClient {
           try { payload = JSON.parse(text); } catch { payload = { message: text }; }
         }
         if (!response.ok) {
-          const sameConnection = requestRevision === this.connectionRevision && baseUrl === this.baseUrl;
+          const equivalentRelativeBase = typeof baseUrl === "string" && /^https?:\/\//i.test(baseUrl)
+            && !/^https?:\/\//i.test(this.baseUrl)
+            && new URL(this.baseUrl, new URL(baseUrl).origin).toString().replace(/\/$/, "") === normalizeBaseUrl(baseUrl);
+          const sameConnection = requestRevision === this.connectionRevision && (baseUrl === this.baseUrl || equivalentRelativeBase);
           if (response.status === 401 && authenticated && allowRefresh && !recoveryAttempted && sameConnection) {
             recoveryAttempted = true;
             if (this.token && activeAuthToken !== this.token) {
@@ -259,15 +277,16 @@ export class IrisAdminClient {
               continue;
             }
             if (this.refreshToken) {
-              activeAuthToken = await this.refreshAccessToken({ baseUrl, expectedRevision: requestRevision });
+              activeAuthToken = await this.refreshAccessToken({ baseUrl: this.baseUrl, expectedRevision: requestRevision });
               continue;
             }
           }
           const safePayload = redactSensitive(payload);
-          const message = redactSensitiveText(safePayload?.message || safePayload?.error || `IRIS request failed with HTTP ${response.status}`);
+          const message = irisErrorMessage(safePayload, response.status);
           throw new IrisApiError(message, { status: response.status, payload: safePayload, path });
         }
         const safePayload = redactResponse ? redactSensitive(payload) : payload;
+        this.successfulRequests += 1;
         if (includeMeta) return { payload: safePayload, status: response.status, location: response.headers.get("location"), responseUrl: response.url };
         return safePayload;
       }

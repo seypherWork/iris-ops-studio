@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../web/", import.meta.url));
 const port = Number(process.env.PORT || 4173);
+const restDiscoveryDelayMs = Math.max(0, Math.min(10_000, Number(process.env.REST_DISCOVERY_DELAY_MS || 0) || 0));
+// Local QA only: simulate an endpoint denied by IRIS without touching a live instance.
+const unavailableRoutes = new Set((process.env.MOCK_UNAVAILABLE_ROUTES || "").split(",").map((route) => route.trim()).filter(Boolean));
 
 const processes = [
   { Pid: 8421, Nspace: "IRISAPP", Routine: "%SYS.Task.RunLegacyTask", Username: "SYSTEM", State: "RUN", CPUTime: 1842, ElapsedTime: "03:04:33", CanBeSuspended: true, CanBeTerminated: true },
@@ -27,6 +30,14 @@ const roles = {
   IrisOps_TestRole: { Description: "Disposable validation role", GrantedRoles: [], EscalationOnly: false, Resources: [{ Name: "%DB_IRISOPS", Permissions: "R" }] },
 };
 
+const webApps = {
+  "/csp/ops": { Name: "/csp/ops", NameSpace: "IRISOPS", IsNameSpaceDefault: false, Enabled: true, DispatchClass: "", Resource: "%DB_IRISOPS" },
+  "/api/IrisOps_TestWeb": {
+    Name: "/api/IrisOps_TestWeb", NameSpace: "IRISAPP", IsNameSpaceDefault: false, Enabled: false,
+    DispatchClass: "IrisOps.Test.REST", Resource: "%DB_IRISOPS", Description: "Disposable mock REST service",
+  },
+};
+
 const fixtures = {
   "/api/admin/info": { server: "local-mock", version: "IRIS 2026.2", namespace: "%SYS", user: "demo-operator", api: "SysAdmin v2" },
   "/api/admin/v2/monitor/dashboard/main": { status: {}, result: { Performance: { GlobalRefsPerSecond: 18420, CacheEfficiency: 98.7, DiskReads: 1832, DiskWrites: 642 }, Status: { UpTime: "18d 07h 42m", SystemMonitor: true }, SystemUsage: { DatabaseSpace: "Normal", DatabaseJournal: "Normal", JournalSpace: "Normal", LockTable: "Normal", WriteDaemon: "Normal", Processes: 142, CSPSessions: 12 }, Alerts: { SeriousAlerts: 0, ApplicationErrors: 1 }, Licensing: { LicenseLimit: 100, LicenseUse: 22 }, UpcomingTasks: [{ Task: "PurgeAudit", Time: "02:00", Status: "Scheduled" }] } },
@@ -45,7 +56,6 @@ const fixtures = {
   "/api/admin/v2/security/users": { status: {}, result: [{ Name: "ops-admin", FullName: "Operations administrator", Enabled: true, Type: "Password user", NameSpace: "%SYS", Roles: ["%Manager"], Routine: "" }, { Name: "IrisOps_TestUser", FullName: "IRIS Ops validation user", Enabled: true, Type: "Password user", NameSpace: "USER", Roles: ["IrisOps_TestRole"], Routine: "" }] },
   "/api/admin/v2/security/roles": { status: {}, result: [{ Name: "%Manager", Description: "IRIS system manager", CreatedBy: "_SYSTEM", EscalationOnly: false, ResourceCount: 1 }, { Name: "IrisOps_TestRole", Description: "Disposable validation role", CreatedBy: "demo-operator", EscalationOnly: false, ResourceCount: 1 }] },
   "/api/admin/v2/security/resources": { status: {}, result: [{ Name: "%Admin_Operate", Description: "Operate and monitor IRIS", PublicPermission: "" }, { Name: "%Admin_Secure", Description: "Manage security", PublicPermission: "" }, { Name: "%DB_IRISOPS", Description: "Validation database", PublicPermission: "" }] },
-  "/api/admin/v2/web-apps": { status: {}, result: [{ Name: "/csp/ops", Namespace: "IRISOPS", Enabled: true, AuthenticationMethods: ["Password", "JWT"], DispatchClass: "", Resource: "%DB_IRISOPS" }] },
   "/api/admin/v2/wallet/collections": { status: {}, result: [{ Name: "Integration secrets", EditResource: "%Admin_Wallet", UseResource: "%DB_IRISOPS" }] },
   "/api/admin/v2/security/x509-credentials": { status: {}, result: [{ Alias: "mTLS gateway", HasPrivateKey: true, OwnerList: ["ops-admin"], PeerNames: ["gateway.example"] }] },
   "/api/admin/v2/security/oauth2/client/server-definitions": { status: {}, result: [{ ID: "auth0-prod", IssuerEndpoint: "https://identity.example/", ClientCount: 2, ResourceCount: 1 }] },
@@ -71,12 +81,62 @@ async function consumeJson(req) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
+  if (req.method === "GET" && url.pathname === "/fixtures/mobile-preview.html") {
+    const fixture = await readFile(new URL("../test/fixtures/mobile-preview.html", import.meta.url));
+    res.writeHead(200, { "Content-Type": mime[".html"], "Content-Length": fixture.length, "Cache-Control": "no-store" });
+    return res.end(fixture);
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/mgmnt/") {
+    if (restDiscoveryDelayMs) await new Promise((resolve) => setTimeout(resolve, restDiscoveryDelayMs));
+    return json(res, 200, [{
+      name: "/api/IrisOps_TestWeb", namespace: "IRISAPP", dispatchClass: "IrisOps.Test.REST",
+      resource: "%DB_IRISOPS", enabled: webApps["/api/IrisOps_TestWeb"].Enabled,
+      swaggerSpec: "/api/mgmnt/v1/IRISAPP/spec/api/IrisOps_TestWeb",
+    }]);
+  }
+  if (req.method === "GET" && url.pathname === "/api/mgmnt/v2/") {
+    if (restDiscoveryDelayMs) await new Promise((resolve) => setTimeout(resolve, restDiscoveryDelayMs));
+    return json(res, 200, [{
+      name: "IrisOps.Test", namespace: "IRISAPP", dispatchClass: "IrisOps.Test.REST",
+      webApplications: "/api/IrisOps_TestWeb", swaggerSpec: "/api/mgmnt/v2/IRISAPP/IrisOps.Test",
+    }]);
+  }
+  if (req.method === "GET" && ["/api/mgmnt/v1/IRISAPP/spec/api/IrisOps_TestWeb", "/api/mgmnt/v2/IRISAPP/IrisOps.Test"].includes(url.pathname)) {
+    return json(res, 200, { swagger: "2.0", info: { title: "Disposable mock API", version: "1.0" }, paths: {
+      "/status": { get: { summary: "Read mock status" } },
+      "/jobs": { post: { summary: "Create mock job" } },
+    } });
+  }
+
   if (url.pathname === "/api/admin/login" && req.method === "POST") {
     await consumeJson(req);
     return json(res, 200, { result: { access_token: "local-demo-token", refresh_token: "local-refresh-token", sub: "demo-operator", exp: 9999999999 } });
   }
 
   if (url.pathname.startsWith("/api/admin/")) {
+    if (req.method === "GET" && unavailableRoutes.has(url.pathname)) {
+      return json(res, 403, { error: "Mock source unavailable for partial-view validation" });
+    }
+    if (url.pathname === "/api/admin/v2/web-apps" && req.method === "GET") {
+      return json(res, 200, { status: {}, result: Object.values(webApps) });
+    }
+    if (url.pathname === "/api/admin/v2/web-app") {
+      const name = url.searchParams.get("name");
+      if (!webApps[name]) return json(res, 404, { error: "Web application not found" });
+      if (req.method === "GET") {
+        // IRIS 2026.2 uses the query parameter to identify the application;
+        // the detail result itself does not contain a Name property.
+        const { Name: _name, ...detail } = webApps[name];
+        return json(res, 200, { status: {}, result: detail });
+      }
+      if (req.method === "PUT") {
+        const input = await consumeJson(req);
+        if (!input || typeof input.Enabled !== "boolean") return json(res, 400, { error: "Enabled must be a boolean" });
+        webApps[name] = { ...webApps[name], ...input, Name: name };
+        return json(res, 200, { status: {}, result: webApps[name] });
+      }
+    }
     if (url.pathname === "/api/admin/v2/process" && req.method === "GET") {
       const process = processes.find((item) => String(item.Pid) === url.searchParams.get("id"));
       return process ? json(res, 200, { status: {}, result: process }) : json(res, 404, { error: "Process not found" });
@@ -159,5 +219,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  process.stdout.write(`IRIS Ops Studio mock: http://127.0.0.1:${port}\n`);
+  process.stdout.write(`IRIS Ops Studio mock: http://127.0.0.1:${server.address().port}\n`);
 });

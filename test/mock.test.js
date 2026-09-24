@@ -2,26 +2,33 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { IrisAdminClient, unwrapIrisResult } from "../web/assets/api.js?v=1.1.0";
-import { buildRoleResourceMutation, buildUserRoleMutation, captureVerificationBaseline, evaluatePrecondition, evaluateVerification, inferVerification } from "../web/assets/operations.js";
+import { IrisAdminClient, unwrapIrisResult } from "../web/assets/api.js?v=1.2.0";
+import { buildRoleResourceMutation, buildUserRoleMutation, buildWebAppAvailabilityMutation, captureVerificationBaseline, evaluatePrecondition, evaluateVerification, inferVerification } from "../web/assets/operations.js";
+import { loadRestCatalog, loadRestSpec, summarizeOpenApi } from "../web/assets/rest-discovery.js";
 
 test("mock server serves the portal and representative API operations", async (t) => {
-  const port = 43173;
   const child = spawn(process.execPath, ["mock/server.mjs"], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: "0" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   t.after(() => child.kill());
 
-  const ready = once(child.stdout, "data");
+  const ready = once(child.stdout, "data").then(([chunk]) => {
+    const port = Number(chunk.toString().match(/127\.0\.0\.1:(\d+)/)?.[1]);
+    if (!port) throw new Error("Mock server did not report its assigned port");
+    return port;
+  });
   const failed = once(child, "exit").then(([code]) => { throw new Error(`Mock server exited before readiness (${code})`); });
-  await Promise.race([ready, failed]);
+  const port = await Promise.race([ready, failed]);
 
   const page = await fetch(`http://127.0.0.1:${port}/`);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /IRIS Ops Studio/);
-  for (const asset of ["styles.css", "api.js", "sanitization.js", "operations.js", "app.js"]) {
+  const mobileFixture = await fetch(`http://127.0.0.1:${port}/fixtures/mobile-preview.html`);
+  assert.equal(mobileFixture.status, 200);
+  assert.match(await mobileFixture.text(), /iframe[^>]+src="\.\.\/index\.html#overview"/);
+  for (const asset of ["styles.css", "api.js", "sanitization.js", "operations.js", "rest-discovery.js", "app.js"]) {
     const response = await fetch(`http://127.0.0.1:${port}/assets/${asset}`);
     assert.equal(response.status, 200, asset);
   }
@@ -72,6 +79,24 @@ test("mock server serves the portal and representative API operations", async (t
   await client.request(rolePath, { method: "PUT", body: roleChange.body });
   assert.equal(evaluateVerification(roleChange.verification, await client.request(rolePath)).status, "verified");
 
+  const webPath = "/v2/web-app?name=%2Fapi%2FIrisOps_TestWeb";
+  const webBefore = await client.request(webPath);
+  const webChange = buildWebAppAvailabilityMutation(webBefore, "/api/IrisOps_TestWeb", true);
+  assert.equal(evaluatePrecondition(webChange.precondition, await client.request(webPath)).ok, true);
+  await client.request(webPath, { method: "PUT", body: webChange.body });
+  assert.equal(evaluateVerification(webChange.verification, await client.request(webPath)).status, "verified");
+  assert.equal(unwrapIrisResult(await client.request(webPath)).Resource, "%DB_IRISOPS");
+  const stalePlan = buildWebAppAvailabilityMutation(await client.request(webPath), "/api/IrisOps_TestWeb", false);
+  await client.request(webPath, { method: "PUT", body: { ...stalePlan.body, Enabled: true, Description: "External change" } });
+  assert.equal(evaluatePrecondition(stalePlan.precondition, await client.request(webPath)).status, "stale");
+  assert.equal(unwrapIrisResult(await client.request(webPath)).Enabled, true);
+
+  const origin = `http://127.0.0.1:${port}`;
+  const restCatalog = await loadRestCatalog(fetch, origin);
+  assert.equal(restCatalog.entries.length, 2);
+  const spec = await loadRestSpec(fetch, origin, restCatalog.entries[0].specPath);
+  assert.equal(summarizeOpenApi(spec).total, 2);
+
   const taskHistory = unwrapIrisResult(await client.request("/v2/task/history?maxRows=10"));
   assert.equal(taskHistory[0].TaskId, 17);
 
@@ -80,4 +105,25 @@ test("mock server serves the portal and representative API operations", async (t
 
   const audit = await client.requestAsync("/v2/security/audit/records?maxRows=100", { pollIntervalMs: 0 });
   assert.equal(audit[0].AuditIndex, 7);
+});
+
+test("mock can deny one inventory source while leaving peers available", async (t) => {
+  const child = spawn(process.execPath, ["mock/server.mjs"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, PORT: "0", MOCK_UNAVAILABLE_ROUTES: "/api/admin/v2/security/resources" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => child.kill());
+  const port = await Promise.race([
+    once(child.stdout, "data").then(([chunk]) => {
+      const assigned = Number(chunk.toString().match(/127\.0\.0\.1:(\d+)/)?.[1]);
+      if (!assigned) throw new Error("Mock server did not report its assigned port");
+      return assigned;
+    }),
+    once(child, "exit").then(([code]) => { throw new Error(`Mock server exited before readiness (${code})`); }),
+  ]);
+  const base = `http://127.0.0.1:${port}/api/admin`;
+  assert.equal((await fetch(`${base}/v2/security/resources`)).status, 403);
+  assert.equal((await fetch(`${base}/v2/security/users`)).status, 200);
+  assert.equal((await fetch(`${base}/v2/security/roles`)).status, 200);
 });

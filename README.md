@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml"><img src="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml/badge.svg" alt="Verification status"></a>
   <img src="https://img.shields.io/badge/IRIS-2026.2-00a79d" alt="InterSystems IRIS 2026.2">
-  <img src="https://img.shields.io/badge/tests-57%20passing-26a269" alt="57 tests passing">
+  <img src="https://img.shields.io/badge/tests-84%20passing-26a269" alt="84 tests passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
@@ -24,7 +24,8 @@ The project is an original entry for the **InterSystems Programming Contest:
 Build Your Own Management Portal**.
 
 Original challenge and requirements: [Contest 48](https://openexchange.intersystems.com/contest/48).
-Validation evidence: [current validation report](docs/validation-report.md).
+Validation evidence: [final 1.2.0 remediation report](docs/final-remediation-validation-2026-09-24.md), [earlier 1.2.0 report](docs/web-app-development-validation.md)
+and [1.1.0 report](docs/validation-report.md).
 Release history: [changelog](CHANGELOG.md).
 Developer Community article: [IRIS Ops Studio: a safety-first operations console for InterSystems IRIS](https://community.intersystems.com/post/iris-ops-studio-safety-first-operations-console-intersystems-iris).
 Technical article draft: [Beyond HTTP 200: verifiable administrative workflows](docs/community-article-verifiable-operations-en.md).
@@ -35,34 +36,42 @@ Technical article draft: [Beyond HTTP 200: verifiable administrative workflows](
 - [Guided Operations — One Change. Verified.](https://www.youtube.com/watch?v=ezfg4a-BCUk) — 1.1.0 preflight, target-bound confirmation, and readback in the labeled Safe demo.
 - [Incident Timeline — From Signal to Evidence](https://www.youtube.com/watch?v=CCJjEhDIXYQ) — 1.1.0 audit, task-history, and browser-session correlation in the labeled Safe demo.
 
-## What's new in 1.1.0
+## What's new in 1.2.0
 
-Version 1.1.0 turns a successful API response into the start of a verification
-workflow, not the end of one:
+- **Guided web-app availability.** Eligible non-system applications can be
+  enabled or disabled with a complete-configuration preview, a fresh check
+  immediately before `PUT`, and full readback. Protected, default, ambiguous,
+  management, and Ops Studio applications remain inventory-only.
+- **Same-origin REST discovery.** The optional catalog reads Management API
+  and OpenAPI documentation without invoking listed operations or forwarding
+  the SysAdmin token. It clearly reports missing browser authorization.
+- **More reliable operations.** Connection changes and delayed responses
+  cannot carry a pending preview onto another instance. Task execution waits
+  for a *new, successful completion* rather than treating scheduling or an
+  old result as success. Uncertain writes remain visible for review.
+- **Clearer evidence and safer display.** Explorer resolves asynchronous
+  audit responses, the journal distinguishes uncertain outcomes, and
+  credential-shaped fields and free text are redacted before display or copy.
+  Mobile tables and confirmation controls remain accessible.
+- **Straightforward installation.** The ZPM package installs the portal into
+  IRIS; the container image and dependency-free Safe demo remain available.
+  Versioned asset URLs avoid stale browser files after a fresh installation.
 
-- Guided process, task, user-role, and role-resource changes now show a
-  before/after preview, require a target-bound confirmation, and perform a
-  fresh readback. Results are explicitly marked verified, pending, mismatched,
-  blocked, or unverified as appropriate.
-- Permission changes preserve unrelated grants, use only documented mutable
-  fields, and block a stale preview before sending a `PUT`.
-- Incident Timeline correlates IRIS audit records, task history, and this
-  browser session's operation journal, with source, severity, entity, actor,
-  text, and correlation filters. It is not a full IRIS log aggregator.
-- The API explorer now catalogs 34 method/path pairs checked against the
-  official SysAdmin API v2 specification, up from 27. Catalog validation does
-  not mean every route was exercised against a live server.
-- The suite now has 57 passing tests. Authenticated checks on disposable IRIS
-  Community 2026.2 instances and desktop/mobile visual review are documented
-  with their exact scope in the [validation report](docs/validation-report.md).
+The final source passes **84/84 automated tests**. Its measured aggregate line
+coverage is about **79.4% including the browser interaction module**, not a
+claim of complete behavior coverage. A fresh IRIS Community 2026.2 image
+passed installation, served-file hash and authorization-boundary checks. On
+that exact image, a disposable on-demand task was run and suspended through
+the UI; IRIS independently confirmed a new successful finish and the final
+suspended state. Other guided workflows were checked on separate disposable
+instances, with the scope recorded in the
+[final validation report](docs/final-remediation-validation-2026-09-24.md).
 
-The portal is still a static browser client. Its previews and confirmations
-are operator safeguards, while IRIS authorization remains the server-side
-boundary; 1.1.0 does not add server-enforced per-tab read-only mode.
-
-The [original overview video](https://www.youtube.com/watch?v=Vxn_usXOEPU)
-shows the earlier interface and sanitized live-IRIS evidence. It does not yet
-demonstrate the new 1.1.0 workflows shown in the screenshots below.
+Limits: the portal is a browser client, so its confirmations do not impose a
+server-enforced read-only mode; IRIS authorization remains the server-side
+boundary. An in-place upgrade was not tested. REST discovery needs separate
+Management API browser permission. Earlier release details are in the
+[changelog](CHANGELOG.md).
 
 ## Why it is useful
 
@@ -79,6 +88,10 @@ Key features:
   the server's `CanBeSuspended` and `CanBeTerminated` capability flags.
 - Scheduled task inspection and execution controls.
 - Database storage, device, user, role, and web application inventory views.
+- Guided enable/disable for eligible, non-system web applications, with a
+  complete-configuration precondition and readback.
+- Read-only, independently authorized REST/OpenAPI catalog with an explicit
+  unavailable state when the Management API is not accessible.
 - Wallet, X.509, and OAuth 2.0 security configuration views.
 - Audit-event query view.
 - Incident Timeline combining audit records, task history, and the current
@@ -109,6 +122,9 @@ No IRIS instance or credentials are required for this route:
    schema-limited request preview before confirmation.
 5. Return to **Logs & audit** and filter Audit, Tasks, and Ops Studio events by
    source, severity, text, entity, or correlation identifier.
+6. Open **Web apps** to inspect a protected management row, the eligible
+   `/api/app` demo fixture, and its target-bound availability preview. The
+   separate REST catalog never invokes operations from a specification.
 
 Safe demo never sends an IRIS request. The explorer labels its results as
 simulations and declines unsupported or unsafe destinations. Custom API paths
@@ -120,7 +136,7 @@ GET and HEAD requests cannot carry a JSON body.
 | Safety is a workflow, not a warning banner | Preflight state, target-bound phrase, execution, readback, and journal entry |
 | Permission management is functional | User-role and role-resource mutation cards in Access control |
 | Logs cross subsystem boundaries | Audit + task history + session operations in Incident Timeline |
-| Secrets do not enter evidence | Recursive response redaction and query-secret redaction tests |
+| Known credential-shaped values are redacted | Recursive response, query-secret, audit-text, and task-text tests |
 | Review is reproducible | Safe demo, stateful mock API, zero runtime dependencies, and `npm run check` |
 
 ## Product tour
@@ -275,7 +291,7 @@ by the separate `/api/admin` authentication and authorization layer.
 | Infrastructure | `/v2/databases`, `/v2/devices` | Inspect database storage, mount state, and operating-system devices |
 | Tasks | `/v2/tasks`, `/v2/task/info`, `/v2/task/history`, `/run`, `/suspend`, `/resume` | Inspect, operate, and verify scheduled work |
 | Access | `/v2/security/users`, `/user`, `/roles`, `/role`, `/resources` | Inventory and safely change user roles and role resources |
-| Web apps | `/v2/web-apps`, `/v2/web-app` | Inspect and configure applications |
+| Web apps | `/v2/web-apps`, `/v2/web-app` | Inventory applications and guide eligible non-system availability changes |
 | Secrets | `/v2/wallet/collections`, `/v2/security/x509-credentials` | Metadata-only protected-asset inventory |
 | OAuth 2.0 | `/v2/security/oauth2/client/server-definitions`, `/resource-servers`, `/server/clients` | Inspect authorization servers, resources, clients, and redirect metadata |
 | Audit | `/v2/security/audit/records`, `/v2/task/history` | Normalize audit, task, and session-operation evidence into Incident Timeline |
@@ -328,32 +344,26 @@ without an IRIS instance.
 
 ## Validation status
 
-- JavaScript syntax checks: automated.
-- Client, redaction, safety classification, HTTP error, and timeout tests:
-  automated with `node:test`.
-- The 1.1.0 suite: 57/57 passing; the testable API, explorer,
-  operation, and shared sanitization modules reported 98.75–98.98% line
-  coverage across repeated runs under Node.js 24. The browser application module is not included in that
-  coverage figure.
-- Mock-server routes and static application: locally testable without secrets.
-- Real IRIS 2026.2 container integration for the public v0.1 release: verified
-  for login, representative read endpoints, task execution, and
-  suspend/resume/terminate control of a dedicated test process. Invalid input
-  and connection failure were also exercised; credentials and access tokens
-  are excluded from the report.
-- The earlier 0.2.0 candidate passed live user-role, role-resource, process,
-  and task workflows on disposable IRIS 2026.2 fixtures, including
-  stale-preview blocking and partial log-source failures. The revised 1.1.0
-  code has passed local UI regression checks, dedicated-fixture user-role and
-  role-resource mutation/readback tests, and authenticated read-only checks in
-  a separate healthy disposable IRIS container. All ten live areas were
-  reviewed at desktop and mobile widths after a layout correction. A fresh
-  candidate ZIP was extracted and its files and tests checked independently.
-  The older fixture container and volume remain untouched for possible rechecking.
-- The latest verified results are recorded in
-  [docs/validation-report.md](docs/validation-report.md).
-- The live-validation procedure inherited from the local 0.2.0 candidate is in
-  [docs/v0.2-live-validation.md](docs/v0.2-live-validation.md).
+- **Automated:** seven JavaScript syntax checks and 84/84 tests passed,
+  including browser-coordination regressions. Aggregate line coverage in the
+  latest run was about 79.4%; a passing suite is not proof of zero defects.
+- **Exact final image:** fresh IRIS Community 2026.2 installation, matching
+  served-file hashes, unauthenticated API rejection, authenticated navigation,
+  and a disposable on-demand task Run/Suspend. IRIS independently showed a
+  new successful finish and the final suspended state.
+- **Other isolated IRIS checks:** guided Access and web-app changes, blocked
+  stale previews, and process controls were exercised on separate disposable
+  installations. Those results are not represented as tests of every endpoint
+  on the final image.
+- **Visual:** all ten areas were opened at measured 1440×900 and 390×844
+  viewports without page-level overflow; the mobile confirmation dialog and
+  Incident Timeline were inspected. No browser warning/error was observed in
+  that session.
+- **Reproduce:** `npm run check` runs syntax and test checks; `npm start`
+  launches the dependency-free Safe demo. The
+  [final validation report](docs/final-remediation-validation-2026-09-24.md)
+  distinguishes automated, synthetic-browser and real-IRIS evidence. Earlier
+  release history remains in the [changelog](CHANGELOG.md).
 
 ## Scope and limits of the evidence
 
@@ -393,11 +403,11 @@ without an IRIS instance.
 
 ## Contest material
 
-- [Video demonstration](https://www.youtube.com/watch?v=Vxn_usXOEPU)
+- [Three video walkthroughs](#video-walkthroughs)
 - [Submission draft](docs/submission.md)
 - [90-second demonstration script](docs/demo-script.md)
 - [API compatibility notes](docs/api-compatibility.md)
-- [Validation report](docs/validation-report.md)
+- [1.2.0 validation report](docs/web-app-development-validation.md)
 
 ## License
 

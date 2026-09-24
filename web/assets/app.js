@@ -8,16 +8,19 @@ import {
   redactSensitive,
   redactSensitiveText,
   unwrapIrisResult,
-} from "./api.js?v=1.1.0";
+} from "./api.js?v=1.2.0";
 import {
   buildRoleResourceMutation,
   buildUserRoleMutation,
+  buildWebAppAvailabilityMutation,
+  captureProcessPrecondition,
   captureVerificationBaseline,
   createJournalEntry,
   evaluatePrecondition,
   evaluateVerification,
   filterTimeline,
   inferVerification,
+  isProtectedUser,
   mergeTimeline,
   normalizeAuditRecords,
   normalizeJournalEntries,
@@ -26,15 +29,19 @@ import {
   reconcileWebAppSummary,
   reconcileTaskSummary,
   redactOperationPath,
+  sameOperationContext,
   summarizeReadback,
-} from "./operations.js?v=1.1.0-taskstate";
+  verificationPollPolicy,
+  webAppGuidedEligibility,
+} from "./operations.js?v=1.2.0";
+import { loadRestCatalog, loadRestSpec, managementOrigin, summarizeOpenApi } from "./rest-discovery.js?v=1.2.0";
 import {
   catalogSelectionValue,
   explorerOutcomeLabel,
   methodAcceptsBody,
   prepareExplorerRequest,
   verifiedJournalCount,
-} from "./explorer.js?v=1.1.0";
+} from "./explorer.js?v=1.2.0";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -92,10 +99,19 @@ const demo = {
     AuditRead: { Description: "Audit review", GrantedRoles: [], EscalationOnly: false, Resources: [{ Name: "%Admin_Secure", Permissions: "R" }] },
   },
   webapps: [
-    { name: "/api/admin", namespace: "%SYS", enabled: true, auth: "Password, JWT", dispatch: "%Api.Admin" },
-    { name: "/csp/ops", namespace: "IRISAPP", enabled: true, auth: "Password", dispatch: "Static files" },
-    { name: "/api/app", namespace: "IRISAPP", enabled: true, auth: "Delegated", dispatch: "App.REST" },
+    { name: "/api/admin", namespace: "%SYS", isDefault: false, enabled: true, auth: "Password, JWT", dispatch: "%Api.Admin" },
+    { name: "/csp/ops", namespace: "IRISAPP", isDefault: false, enabled: true, auth: "Password", dispatch: "Static files" },
+    { name: "/api/app", namespace: "IRISAPP", isDefault: false, enabled: true, auth: "Delegated", dispatch: "App.REST" },
   ],
+  webappDetails: {
+    "/api/admin": { Name: "/api/admin", NameSpace: "%SYS", IsNameSpaceDefault: false, Enabled: true, DispatchClass: "%Api.Admin", Resource: "%Admin_Secure" },
+    "/csp/ops": { Name: "/csp/ops", NameSpace: "IRISAPP", IsNameSpaceDefault: false, Enabled: true, DispatchClass: "", Resource: "%DB_IRISAPP" },
+    "/api/app": { Name: "/api/app", NameSpace: "IRISAPP", IsNameSpaceDefault: false, Enabled: true, DispatchClass: "App.REST", Resource: "%DB_IRISAPP", Description: "Disposable demonstration service" },
+  },
+  restCatalog: [
+    { name: "/api/app", namespace: "IRISAPP", dispatchClass: "App.REST", webApplications: "/api/app", enabled: true, specPath: "/api/mgmnt/v1/IRISAPP/spec/api/app", source: "Demo fixture" },
+  ],
+  restSpec: { info: { title: "Demo application API", version: "1.0" }, paths: { "/appointments": { get: { summary: "List demonstration appointments" }, post: { summary: "Create a demonstration appointment" } } } },
   secrets: [
     { name: "production-services", type: "Wallet collection", items: 4, state: "Active", rotated: "12 days ago" },
     { name: "web-tls", type: "X509 credential", items: 1, state: "Valid", rotated: "41 days ago" },
@@ -132,12 +148,17 @@ const state = {
   demo: true,
   busy: false,
   renderRevision: 0,
+  explorerRequestRevision: 0,
+  operationPreparationRevision: 0,
+  connectionEpoch: 0,
   client: new IrisAdminClient(),
   pendingOperation: null,
   operationJournal: [],
   timelineEvents: [],
   timelineFilters: { source: "all", severity: "all", query: "" },
   accessCatalog: null,
+  restCatalog: [],
+  restOrigin: null,
   connectionContext: { mode: "demo", instance: "demo", actor: "Demo operator" },
 };
 
@@ -167,6 +188,18 @@ function rowsFrom(payload, fallbacks = []) {
   return [];
 }
 
+async function mapLimited(items, worker, shouldContinue = () => true, limit = 8) {
+  const results = [...items];
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length && shouldContinue()) {
+      const index = next++;
+      results[index] = await worker(items[index], index);
+    }
+  }));
+  return results;
+}
+
 function field(row, ...aliases) {
   for (const alias of aliases) if (row?.[alias] !== undefined) return row[alias];
   const lookup = new Map(Object.keys(row || {}).map((key) => [key.toLowerCase(), key]));
@@ -184,10 +217,6 @@ function mappedRows(payload, schema, fallbacks = []) {
   })));
 }
 
-function isProtectedUser(name) {
-  return /^_/.test(String(name || "")) || /^(admin|cspsystem|unknownuser)$/i.test(String(name || ""));
-}
-
 function isSystemRole(name) {
   return String(name || "").startsWith("%");
 }
@@ -200,9 +229,9 @@ function table(rows, columns, { empty = "No records returned", actions = null } 
     if (typeof value === "boolean") return `<td><span class="pill ${value ? "ok" : "muted"}">${value ? "Enabled" : "Disabled"}</span></td>`;
     if (key === "status" || key === "state" || key === "level" || key === "lastResult") {
       const tone = /run|ready|complete|active|valid|info/i.test(value) ? "ok" : /warn|suspend/i.test(value) ? "warn" : "muted";
-      return `<td><span class="pill ${tone}">${escapeHtml(value)}</span></td>`;
+      return `<td><span class="pill ${tone}">${escapeHtml(redactSensitiveText(value))}</span></td>`;
     }
-    return `<td>${escapeHtml(value)}</td>`;
+    return `<td>${escapeHtml(redactSensitiveText(value))}</td>`;
   }).join("")}${actions ? `<td class="row-actions">${actions(row)}</td>` : ""}</tr>`).join("");
   return `<div class="table-wrap"><table><thead><tr>${head}${actions ? '<th scope="col">Actions</th>' : ""}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
@@ -225,6 +254,14 @@ function shellCard(title, body, action = "") {
   return `<article class="card"><header><div><p class="eyebrow">IRIS SysAdmin API</p><h2>${escapeHtml(title)}</h2></div>${action}</header>${body}</article>`;
 }
 
+function unavailableSource(name) {
+  return `<div class="empty"><strong>${escapeHtml(name)} unavailable</strong><span>This source could not be read with the current connection. Other sections remain usable.</span></div>`;
+}
+
+function partialSourceNote(names) {
+  return names.length ? `<div class="security-note"><span>!</span><div><strong>Partial data</strong><p>${escapeHtml(names.join(", "))} could not be loaded. No missing source is being shown as an empty result.</p></div></div>` : "";
+}
+
 async function request(path, fallbackKey, options = {}) {
   if (state.demo) return structuredClone(demo[fallbackKey]);
   return state.client.request(path, options);
@@ -232,12 +269,13 @@ async function request(path, fallbackKey, options = {}) {
 
 async function loadOverview() {
   if (state.demo) return { ...demo.overview, demo: true };
-  const [main, resources, usage] = await Promise.all([
+  const [main, resources, usage] = await Promise.allSettled([
     state.client.request("/v2/monitor/dashboard/main"),
     state.client.request("/v2/monitor/dashboard/system-resources"),
     state.client.request("/v2/monitor/system-usage"),
   ]);
-  const dashboard = unwrapIrisResult(main) || {};
+  if (main.status !== "fulfilled") throw main.reason;
+  const dashboard = unwrapIrisResult(main.value) || {};
   const performance = dashboard.Performance || {};
   const system = dashboard.SystemUsage || {};
   const status = dashboard.Status || {};
@@ -252,8 +290,9 @@ async function loadOverview() {
     performance,
     system,
     licensing,
-    resources: unwrapIrisResult(resources),
-    counters: unwrapIrisResult(usage),
+    resources: resources.status === "fulfilled" ? unwrapIrisResult(resources.value) : null,
+    counters: usage.status === "fulfilled" ? unwrapIrisResult(usage.value) : null,
+    unavailableSources: [resources.status !== "fulfilled" ? "System resources" : "", usage.status !== "fulfilled" ? "System usage" : ""].filter(Boolean),
   };
 }
 
@@ -271,7 +310,7 @@ async function renderOverview() {
       { area: "Journal space", status: data.system.JournalSpace },
       { area: "Write daemon", status: data.system.WriteDaemon },
     ], [["area", "Area"], ["status", "Status"]]))}`;
-  return `
+  return `${partialSourceNote(data.unavailableSources || [])}
     <div class="metrics-grid">
       ${metric("Uptime", data.uptime, "continuous availability", "teal")}
       ${metric("Active processes", data.activeProcesses, "current workload")}
@@ -308,59 +347,67 @@ async function renderInfrastructure() {
   let databases = demo.databases;
   let devices = demo.devices;
   if (!state.demo) {
-    const [databasePayload, devicePayload] = await Promise.all([
+    const [databasePayload, devicePayload] = await Promise.allSettled([
       state.client.request("/v2/databases"),
       state.client.request("/v2/devices"),
     ]);
-    databases = mappedRows(databasePayload, {
+    databases = databasePayload.status === "fulfilled" ? mappedRows(databasePayload.value, {
       name: ["Name", "name"], directory: ["Directory", "directory"], server: ["Server", "server"],
       status: ["Status", "status"], startup: ["MountAtStartup", "startup"],
     }, ["databases"])
-      .map((row) => ({ ...row, server: row.server || "Local" }));
-    devices = mappedRows(devicePayload, {
+      .map((row) => ({ ...row, server: row.server || "Local" })) : null;
+    devices = devicePayload.status === "fulfilled" ? mappedRows(devicePayload.value, {
       name: ["Name", "name"], physical: ["PhysicalDevice", "physical"], type: ["Type", "type"],
       subtype: ["SubType", "subtype"], description: ["Description", "description"],
-    }, ["devices"]);
+    }, ["devices"]) : null;
   }
-  return `<div class="security-note"><span>\u25a4</span><div><strong>Operating-system coverage</strong><p>Database mount state and configured I/O devices are retrieved from SysAdmin API v2. Overview shows performance counters; CPU and memory gauges are demo-only.</p></div></div>
+  return `${partialSourceNote([databases === null ? "Databases" : "", devices === null ? "Devices" : ""].filter(Boolean))}<div class="security-note"><span>\u25a4</span><div><strong>Operating-system coverage</strong><p>Database mount state and configured I/O devices are retrieved from SysAdmin API v2. Overview shows performance counters; CPU and memory gauges are demo-only.</p></div></div>
     <div class="tabbed-cards">
-      ${shellCard("Database storage", table(databases, [["name","Database"],["directory","Directory"],["server","Server"],["status","Mount state"],["startup","Mount at startup"]]), '<button class="primary" data-open-explorer="/v2/database|PUT">Configure database</button>')}
-      ${shellCard("Configured devices", table(devices, [["name","Device"],["physical","Physical device"],["type","Type"],["subtype","Subtype"],["description","Description"]]), '<button class="primary" data-open-explorer="/v2/device|PUT">Configure device</button>')}
+      ${shellCard("Database storage", databases === null ? unavailableSource("Databases") : table(databases, [["name","Database"],["directory","Directory"],["server","Server"],["status","Mount state"],["startup","Mount at startup"]]), '<button class="primary" data-open-explorer="/v2/database|PUT">Configure database</button>')}
+      ${shellCard("Configured devices", devices === null ? unavailableSource("Devices") : table(devices, [["name","Device"],["physical","Physical device"],["type","Type"],["subtype","Subtype"],["description","Description"]]), '<button class="primary" data-open-explorer="/v2/device|PUT">Configure device</button>')}
     </div>`;
 }
 
 async function renderTasks() {
+  const revision = state.renderRevision;
   const payload = await request("/v2/tasks", "tasks");
   let rows = mappedRows(payload, { id: ["Id", "id"], name: ["Name", "name"], namespace: ["Namespace", "namespace"], type: ["Type", "type"], next: ["NextScheduled", "next"], status: ["Suspended", "status"], lastResult: ["LastFinished", "lastResult"] }, ["tasks", "content"])
     .map((row) => ({ ...row, status: typeof row.status === "boolean" ? (row.status ? "Suspended" : "Ready") : row.status }));
   if (!state.demo) {
-    rows = await Promise.all(rows.map(async (row) => {
+    rows = await mapLimited(rows, async (row) => {
       try {
         const detail = await state.client.request(appendQuery("/v2/task/info", { id: row.id }));
         return reconcileTaskSummary(row, detail);
       } catch {
         return reconcileTaskSummary(row, null);
       }
-    }));
+    }, () => state.renderRevision === revision && state.view === "tasks");
   }
   return `<div class="split-heading"><div><h2>Scheduled work</h2><p>Inspect, trigger, suspend, and resume background tasks.</p></div><button class="primary" data-open-explorer="/v2/task|POST">Create task</button></div>${shellCard("Task definitions", table(rows, [["id","ID"],["name","Task"],["namespace","Namespace"],["type","Type"],["next","Next run"],["status","Status"],["lastResult","Last finished"]], { actions: (row) => row.status === "Unknown" ? '<button class="mini" disabled title="Task detail is unavailable">Run</button><button class="mini" disabled title="Task detail is unavailable">Suspend / resume</button>' : `<button class="mini" data-operation="POST|/v2/task/run|${escapeHtml(row.id)}">Run</button>${row.status === "Suspended" ? `<button class="mini" data-operation="POST|/v2/task/resume|${escapeHtml(row.id)}">Resume</button>` : `<button class="mini" data-operation="POST|/v2/task/suspend|${escapeHtml(row.id)}">Suspend</button>`}` }))}`;
 }
 
 async function renderAccess() {
+  const revision = state.renderRevision;
   let users;
   let roles;
   let resources;
+  let usersUnavailable = false;
+  let rolesUnavailable = false;
+  let resourcesUnavailable = false;
   if (state.demo) {
     users = demo.users;
     roles = demo.roles;
     resources = demo.resources;
   } else {
-    const [usersPayload, rolesPayload, resourcesPayload] = await Promise.all([
+    const [usersPayload, rolesPayload, resourcesPayload] = await Promise.allSettled([
       state.client.request("/v2/security/users"),
       state.client.request("/v2/security/roles"),
       state.client.request("/v2/security/resources"),
     ]);
-    users = mappedRows(usersPayload, {
+    usersUnavailable = usersPayload.status !== "fulfilled";
+    rolesUnavailable = rolesPayload.status !== "fulfilled";
+    resourcesUnavailable = resourcesPayload.status !== "fulfilled";
+    users = usersUnavailable ? [] : mappedRows(usersPayload.value, {
       name: ["Name", "name"], enabled: ["Enabled", "enabled"], type: ["Type", "type"],
       namespace: ["NameSpace", "Namespace", "namespace"], roles: ["Roles", "roles"],
     }, ["users"]);
@@ -368,41 +415,41 @@ async function renderAccess() {
     // endpoint.  The single-user endpoint is authoritative and is already the
     // source used by mutation preflight/readback, so reconcile the inventory
     // with it rather than presenting an active account as disabled.
-    users = await Promise.all(users.map(async (user) => {
+    users = await mapLimited(users, async (user) => {
       try {
         const detail = await state.client.request(appendQuery("/v2/security/user", { name: user.name }));
         return reconcileUserSummary(user, detail);
       } catch {
         return reconcileUserSummary(user, null);
       }
-    }));
-    roles = mappedRows(rolesPayload, {
+    }, () => state.renderRevision === revision && state.view === "access");
+    roles = rolesUnavailable ? [] : mappedRows(rolesPayload.value, {
       name: ["Name", "name"], description: ["Description", "description"], createdBy: ["CreatedBy", "createdBy"],
       escalationOnly: ["EscalationOnly", "escalationOnly"], resources: ["ResourceCount", "resources"],
     }, ["roles"]);
-    resources = mappedRows(resourcesPayload, {
+    resources = resourcesUnavailable ? [] : mappedRows(resourcesPayload.value, {
       name: ["Name", "name"], description: ["Description", "description"], publicPermission: ["PublicPermission", "publicPermission"],
     }, ["resources"]);
   }
-  state.accessCatalog = { users, roles, resources };
+  if (state.view === "access" && state.renderRevision === revision) state.accessCatalog = { users, roles, resources };
   const mutableUsers = users.filter((user) => !isProtectedUser(user.name));
   const editableRoles = roles.filter((role) => !isSystemRole(role.name));
   const userOptions = mutableUsers.map((user) => `<option value="${escapeHtml(user.name)}">${escapeHtml(user.name)}</option>`).join("");
   const roleOptions = roles.map((role) => `<option value="${escapeHtml(role.name)}">${escapeHtml(role.name)}</option>`).join("");
   const editableRoleOptions = editableRoles.map((role) => `<option value="${escapeHtml(role.name)}">${escapeHtml(role.name)}</option>`).join("");
   const resourceOptions = resources.map((resource) => `<option value="${escapeHtml(resource.name)}">${escapeHtml(resource.name)}</option>`).join("");
-  const userWorkflowDisabled = !mutableUsers.length || !roles.length ? " disabled" : "";
-  const resourceWorkflowDisabled = !editableRoles.length || !resources.length ? " disabled" : "";
+  const userWorkflowDisabled = usersUnavailable || rolesUnavailable || !mutableUsers.length || !roles.length ? " disabled" : "";
+  const resourceWorkflowDisabled = rolesUnavailable || resourcesUnavailable || !editableRoles.length || !resources.length ? " disabled" : "";
   const userColumns = state.demo
     ? [["name","User"],["enabled","State"],["roles","Roles"],["lastLogin","Last login"],["source","Directory"]]
     : [["name","User"],["enabled","State"],["type","Authentication"],["namespace","Startup namespace"]];
   const roleColumns = state.demo
     ? [["name","Role"],["members","Members"],["resources","Resources"],["inherited","Inherited"]]
     : [["name","Role"],["description","Description"],["createdBy","Created by"],["escalationOnly","Escalation only"]];
-  return `<div class="security-note"><span>\u25c7</span><div><strong>Preview \u2192 confirm \u2192 execute \u2192 readback</strong><p>Every access change starts by reading the current security object and repeats that preflight before execution. Stale or malformed state is blocked; only documented mutable fields are sent, and the complete result is verified before it is marked complete.</p></div></div>
+  return `${partialSourceNote([usersUnavailable ? "Users" : "", rolesUnavailable ? "Roles" : "", resourcesUnavailable ? "Resources" : ""].filter(Boolean))}<div class="security-note"><span>\u25c7</span><div><strong>Preview \u2192 confirm \u2192 execute \u2192 readback</strong><p>Every access change starts by reading the current security object and repeats that preflight before execution. Stale or malformed state is blocked; only documented mutable fields are sent, and the complete result is verified before it is marked complete.</p></div></div>
     <div class="tabbed-cards">
-      ${shellCard("Users", table(users, userColumns))}
-      ${shellCard("Roles", table(roles, roleColumns))}
+      ${shellCard("Users", usersUnavailable ? unavailableSource("Users") : table(users, userColumns))}
+      ${shellCard("Roles", rolesUnavailable ? unavailableSource("Roles") : table(roles, roleColumns))}
     </div>
     <div class="access-workflows">
       ${shellCard("User role assignment", `<div class="workflow-form"><label>User<select id="access-user"${userWorkflowDisabled}>${userOptions}</select></label><label>Role<select id="access-user-role"${userWorkflowDisabled}>${roleOptions}</select></label><div class="workflow-actions"><button class="primary" data-access-action="assign-role"${userWorkflowDisabled}>Assign role</button><button class="ghost" data-access-action="revoke-role"${userWorkflowDisabled}>Revoke role</button></div><p class="workflow-help">The complete user record is fetched first, then the Roles array is changed and verified. Built-in administrator identities are excluded from this guided workflow.</p></div>`)}
@@ -410,64 +457,124 @@ async function renderAccess() {
     </div>`;
 }
 
+function renderRestDiscovery(discovery) {
+  const restRows = discovery.entries.map((entry, index) => ({
+    ...entry,
+    name: redactSensitiveText(entry.name),
+    namespace: redactSensitiveText(entry.namespace),
+    dispatchClass: redactSensitiveText(entry.dispatchClass),
+    webApplications: redactSensitiveText(entry.webApplications),
+    index,
+  }));
+  const discoveryStatus = discovery.status.map((item) => `<span class="source-chip${/unavailable|denied|invalid/i.test(item) ? " bad" : ""}"><i></i>${escapeHtml(item)}</span>`).join("");
+  return `<div class="source-health">${discoveryStatus}</div>
+    ${shellCard("REST service catalog", `<div class="webapp-table">${table(restRows, [["name","Service"],["namespace","Namespace"],["dispatchClass","Dispatch class"],["webApplications","Web application"],["source","Source"]], { empty: discovery.pending ? "Loading REST documentation independently" : "No REST services available to this session", actions: (entry) => `<button class="mini" data-rest-spec-index="${entry.index}"${entry.specPath ? "" : ' disabled title="No safe OpenAPI path was returned"'}>Inspect OpenAPI</button>` })}</div>`, '<span class="caption">Documentation only; inspecting a specification never invokes its operations.</span>')}
+    <div id="rest-spec-results" aria-live="polite"></div>`;
+}
+
+function bindRestSpecButtons(root = document) {
+  $$('[data-rest-spec-index]', root).forEach((button) => button.addEventListener("click", () => {
+    inspectRestSpec(Number(button.dataset.restSpecIndex));
+  }));
+}
+
 async function renderWebapps() {
+  const revision = state.renderRevision;
   const payload = await request("/v2/web-apps", "webapps");
-  let rows = mappedRows(payload, { name: ["Name", "name"], namespace: ["NameSpace", "Namespace", "namespace"], enabled: ["Enabled", "enabled"], auth: ["AuthenticationMethods", "auth"], dispatch: ["DispatchClass", "dispatch"], resource: ["Resource", "resource"] }, ["applications", "webApps"]);
+  let rows = mappedRows(payload, { name: ["Name", "name"], namespace: ["NameSpace", "Namespace", "namespace"], isDefault: ["IsNameSpaceDefault", "isDefault"], enabled: ["Enabled", "enabled"], auth: ["AuthenticationMethods", "auth"], dispatch: ["DispatchClass", "dispatch"], resource: ["Resource", "resource"] }, ["applications", "webApps"]);
   if (!state.demo) {
     // IRIS 2026.2 can return stale Enabled=false values from the collection
     // endpoint. Reconcile each row with the authoritative single-app read.
-    rows = await Promise.all(rows.map(async (webapp) => {
+    rows = await mapLimited(rows, async (webapp) => {
       try {
         const detail = await state.client.request(appendQuery("/v2/web-app", { name: webapp.name }));
         return reconcileWebAppSummary(webapp, detail);
       } catch {
         return reconcileWebAppSummary(webapp, null);
       }
-    }));
+    }, () => state.renderRevision === revision && state.view === "webapps");
   }
-  return shellCard("Web application registry", table(rows, [["name","Application"],["namespace","Namespace"],["enabled","State"],["auth","Authentication"],["dispatch","Dispatch"],["resource","Resource"]]), '<button class="primary" data-open-explorer="/v2/web-app|PUT">Configure app</button>');
+  const actions = (row) => {
+    const eligibility = webAppGuidedEligibility(row.name, row.namespace, row.isDefault);
+    const reason = row.enabled === "Unknown" ? "Application detail is unavailable" : eligibility.reason;
+    const disabled = row.enabled !== true && row.enabled !== false || !eligibility.ok;
+    const next = row.enabled === true ? "Disable" : "Enable";
+    return `<button class="mini ${row.enabled === true ? "danger-text" : ""}" data-webapp-action="${escapeHtml(row.name)}"${disabled ? ` disabled title="${escapeHtml(reason)}"` : ""}>${next}</button>`;
+  };
+  let discovery;
+  if (state.demo) {
+    discovery = { entries: demo.restCatalog, status: ["Demo fixture: no IRIS request"] };
+    if (state.view === "webapps" && state.renderRevision === revision) state.restOrigin = null;
+  } else {
+    const origin = managementOrigin(state.client.baseUrl, location.href);
+    if (state.view === "webapps" && state.renderRevision === revision) state.restOrigin = origin;
+    discovery = origin
+      ? { entries: [], status: ["REST documentation: loading independently"], pending: true }
+      : { entries: [], status: ["Unavailable: REST discovery requires the portal and IRIS API on the same origin"] };
+    if (origin) {
+      setTimeout(async () => {
+        let result;
+        try { result = await loadRestCatalog(fetch.bind(globalThis), origin); }
+        catch { result = { entries: [], status: ["REST documentation: unavailable"] }; }
+        if (state.demo || state.view !== "webapps" || state.renderRevision !== revision) return;
+        const target = $("#rest-discovery");
+        if (!target) return;
+        state.restCatalog = result.entries;
+        target.innerHTML = renderRestDiscovery(result);
+        bindRestSpecButtons(target);
+      }, 0);
+    }
+  }
+  if (state.view === "webapps" && state.renderRevision === revision) state.restCatalog = discovery.entries;
+  return `<div class="security-note"><span>⌘</span><div><strong>Guided availability and read-only REST discovery</strong><p>Only non-system applications can use the guided enable/disable flow. IRIS authorization still applies. REST discovery uses the official same-origin /api/mgmnt service and the existing browser session; no admin token is forwarded to it.</p></div></div>
+    ${shellCard("Web application registry", `<div class="webapp-table">${table(rows, [["name","Application"],["namespace","Namespace"],["enabled","State"],["auth","Authentication"],["dispatch","Dispatch"],["resource","Resource"]], { actions })}</div>`, '<button class="ghost" data-open-explorer="/v2/web-app|GET">Advanced API</button>')}
+    <div id="rest-discovery">${renderRestDiscovery(discovery)}</div>`;
 }
 
 async function renderSecrets() {
   let rows = demo.secrets;
+  let unavailable = [];
   if (!state.demo) {
-    const [wallets, certificates] = await Promise.all([state.client.request("/v2/wallet/collections"), state.client.request("/v2/security/x509-credentials")]);
-    const walletRows = mappedRows(wallets, { name: ["Name", "name"], type: ["type"], editResource: ["EditResource"], useResource: ["UseResource"] }, ["collections"])
-      .map((row) => ({ ...row, type: row.type || "Wallet collection", state: "Protected", details: `${row.editResource || "\u2014"} / ${row.useResource || "\u2014"}` }));
-    const certificateRows = mappedRows(certificates, { name: ["Alias", "name"], hasPrivateKey: ["HasPrivateKey"], owners: ["OwnerList"], peers: ["PeerNames"] }, ["credentials"])
-      .map((row) => ({ ...row, type: "X509 credential", state: row.hasPrivateKey ? "Private key present" : "Certificate only", details: row.owners || "All users" }));
+    const [wallets, certificates] = await Promise.allSettled([state.client.request("/v2/wallet/collections"), state.client.request("/v2/security/x509-credentials")]);
+    unavailable = [wallets.status !== "fulfilled" ? "Wallet collections" : "", certificates.status !== "fulfilled" ? "X509 credentials" : ""].filter(Boolean);
+    const walletRows = wallets.status === "fulfilled" ? mappedRows(wallets.value, { name: ["Name", "name"], type: ["type"], editResource: ["EditResource"], useResource: ["UseResource"] }, ["collections"])
+      .map((row) => ({ ...row, type: row.type || "Wallet collection", state: "Protected", details: `${row.editResource || "\u2014"} / ${row.useResource || "\u2014"}` })) : [];
+    const certificateRows = certificates.status === "fulfilled" ? mappedRows(certificates.value, { name: ["Alias", "name"], hasPrivateKey: ["HasPrivateKey"], owners: ["OwnerList"], peers: ["PeerNames"] }, ["credentials"])
+      .map((row) => ({ ...row, type: "X509 credential", state: row.hasPrivateKey ? "Private key present" : "Certificate only", details: row.owners || "All users" })) : [];
     rows = [...walletRows, ...certificateRows];
   }
   const columns = state.demo ? [["name","Asset"],["type","Type"],["items","Items"],["state","State"],["rotated","Last rotation"]] : [["name","Asset"],["type","Type"],["state","State"],["details","Access / ownership"]];
-  return `<div class="security-note"><span>\u25c8</span><div><strong>Inventory only</strong><p>This view requests and renders metadata. Fields matching password, token, private key, secret, or credential are redacted in the client before display.</p></div></div>${shellCard("Protected assets", table(rows, columns), '<button class="primary" data-open-explorer="/v2/wallet/secret|PUT">Manage secret</button>')}`;
+  return `${partialSourceNote(unavailable)}<div class="security-note"><span>\u25c8</span><div><strong>Inventory only</strong><p>This view requests and renders metadata. Fields matching password, token, private key, secret, or credential are redacted in the client before display.</p></div></div>${shellCard("Protected assets", unavailable.length === 2 ? unavailableSource("Protected assets") : table(rows, columns), '<button class="primary" data-open-explorer="/v2/wallet/secret|PUT">Manage secret</button>')}`;
 }
 
 async function renderOAuth() {
   let servers = demo.oauthServers;
   let resources = demo.oauthResources;
   let clients = demo.oauthClients;
+  let unavailable = [];
   if (!state.demo) {
-    const [serverPayload, resourcePayload, clientPayload] = await Promise.all([
+    const [serverPayload, resourcePayload, clientPayload] = await Promise.allSettled([
       state.client.request("/v2/security/oauth2/client/server-definitions"),
       state.client.request("/v2/security/oauth2/resource-servers"),
       state.client.request("/v2/security/oauth2/server/clients"),
     ]);
-    servers = mappedRows(serverPayload, {
+    unavailable = [serverPayload.status !== "fulfilled" ? "Client authorization servers" : "", resourcePayload.status !== "fulfilled" ? "Resource servers" : "", clientPayload.status !== "fulfilled" ? "Authorization-server clients" : ""].filter(Boolean);
+    servers = serverPayload.status === "fulfilled" ? mappedRows(serverPayload.value, {
       id: ["ID", "id"], issuer: ["IssuerEndpoint", "issuer"], clients: ["ClientCount", "clients"], resources: ["ResourceCount", "resources"],
-    }, ["serverDefinitions"]);
-    resources = mappedRows(resourcePayload, {
+    }, ["serverDefinitions"]) : null;
+    resources = resourcePayload.status === "fulfilled" ? mappedRows(resourcePayload.value, {
       name: ["Name", "name"], server: ["ServerDefinition", "server"],
-    }, ["resourceServers"]);
-    clients = mappedRows(clientPayload, {
+    }, ["resourceServers"]) : null;
+    clients = clientPayload.status === "fulfilled" ? mappedRows(clientPayload.value, {
       name: ["Name", "name"], clientId: ["ClientId", "clientId"], type: ["ClientType", "type"],
       description: ["Description", "description"], redirects: ["RedirectURL", "redirects"],
-    }, ["clients"]);
+    }, ["clients"]) : null;
   }
-  return `<div class="security-note"><span>\u25ce</span><div><strong>OAuth metadata without credential exposure</strong><p>Client IDs, server relationships, and redirect metadata are visible. Known client-secret, token, and private-key password fields are redacted before display.</p></div></div>
-    ${shellCard("Client authorization servers", table(servers, [["id","Definition"],["issuer","Issuer endpoint"],["clients","Clients"],["resources","Resources"]]), '<button class="primary" data-open-explorer="/v2/security/oauth2/client/server-definition|POST">Add server definition</button>')}
+  return `${partialSourceNote(unavailable)}<div class="security-note"><span>\u25ce</span><div><strong>OAuth metadata without credential exposure</strong><p>Client IDs, server relationships, and redirect metadata are visible. Known client-secret, token, and private-key password fields are redacted before display.</p></div></div>
+    ${shellCard("Client authorization servers", servers === null ? unavailableSource("Client authorization servers") : table(servers, [["id","Definition"],["issuer","Issuer endpoint"],["clients","Clients"],["resources","Resources"]]), '<button class="primary" data-open-explorer="/v2/security/oauth2/client/server-definition|POST">Add server definition</button>')}
     <div class="tabbed-cards">
-      ${shellCard("Resource servers", table(resources, [["name","Resource server"],["server","Server definition"]]), '<button class="primary" data-open-explorer="/v2/security/oauth2/resource-server|PUT">Configure resource</button>')}
-      ${shellCard("Authorization-server clients", table(clients, [["name","Client"],["clientId","Client ID"],["type","Type"],["description","Description"],["redirects","Redirect URLs"]]), '<button class="primary" data-open-explorer="/v2/security/oauth2/server/client|POST">Register client</button>')}
+      ${shellCard("Resource servers", resources === null ? unavailableSource("Resource servers") : table(resources, [["name","Resource server"],["server","Server definition"]]), '<button class="primary" data-open-explorer="/v2/security/oauth2/resource-server|PUT">Configure resource</button>')}
+      ${shellCard("Authorization-server clients", clients === null ? unavailableSource("Authorization-server clients") : table(clients, [["name","Client"],["clientId","Client ID"],["type","Type"],["description","Description"],["redirects","Redirect URLs"]]), '<button class="primary" data-open-explorer="/v2/security/oauth2/server/client|POST">Register client</button>')}
     </div>`;
 }
 
@@ -517,12 +624,13 @@ async function loadIncidentTimeline() {
   }
   const journalEvents = normalizeJournalEntries(state.operationJournal);
   sources.push({ name: "Ops Studio", status: `${journalEvents.length} session operations`, ok: true });
-  state.timelineEvents = mergeTimeline(auditEvents, taskEvents, journalEvents);
-  return { events: state.timelineEvents, sources };
+  return { events: mergeTimeline(auditEvents, taskEvents, journalEvents), sources };
 }
 
 async function renderLogs() {
+  const revision = state.renderRevision;
   const { events, sources } = await loadIncidentTimeline();
+  if (revision === state.renderRevision && state.view === "logs") state.timelineEvents = events;
   const filters = state.timelineFilters;
   const filtered = filterTimeline(events, filters);
   const warnings = events.filter((event) => event.severity !== "info").length;
@@ -548,12 +656,12 @@ function demoReadback(path) {
   if (url.pathname === "/v2/process") {
     const process = demo.processes.find((item) => String(item.pid) === String(id));
     if (!process) throw new IrisApiError("Demo process not found", { status: 404, path });
-    return { result: { Pid: process.pid, State: process.state, Namespace: process.namespace, Username: process.user } };
+    return { result: { Pid: process.pid, State: process.state, Namespace: process.namespace, Username: process.user, Routine: process.routine } };
   }
   if (url.pathname === "/v2/task/info") {
     const task = demo.tasks.find((item) => String(item.id) === String(id));
     if (!task) throw new IrisApiError("Demo task not found", { status: 404, path });
-    return { result: { Suspended: task.status === "Suspended", LastFinished: task.lastResult, Status: task.status, Error: "Success" } };
+    return { result: { Suspended: task.status === "Suspended", LastFinished: task.lastResult, Status: "1", Error: "Success" } };
   }
   if (url.pathname === "/v2/security/user") {
     const user = demo.userDetails[name];
@@ -565,11 +673,18 @@ function demoReadback(path) {
     if (!role) throw new IrisApiError("Demo role not found", { status: 404, path });
     return { result: structuredClone(role) };
   }
+  if (url.pathname === "/v2/web-app") {
+    const app = demo.webappDetails[name];
+    if (!app) throw new IrisApiError("Demo web application not found", { status: 404, path });
+    return { result: structuredClone(app) };
+  }
   throw new IrisApiError("No demo readback is defined", { status: 404, path });
 }
 
-async function readback(path) {
-  return state.demo ? demoReadback(path) : state.client.request(path);
+async function readback(path, { unredacted = false } = {}) {
+  // Guided web-app PUTs must compare and preserve the real configuration.
+  // Redacted values are only suitable for display, never for a write body.
+  return state.demo ? demoReadback(path) : state.client.request(path, { redactResponse: !unredacted });
 }
 
 function applyDemoOperation(operation) {
@@ -598,17 +713,22 @@ function applyDemoOperation(operation) {
 }
 
 async function prepareAccessOperation(action) {
+  const origin = operationOrigin();
   if (action === "assign-role" || action === "revoke-role") {
     const userName = $("#access-user").value;
     const roleName = $("#access-user-role").value;
+    if (isProtectedUser(userName)) throw new TypeError("Built-in user is inventory-only in the guided workflow");
     const path = appendQuery("/v2/security/user", { name: userName });
     const beforePayload = await readback(path);
+    assertOperationContext({ ...origin, path });
+    assertPreparationCurrent(origin);
     const change = buildUserRoleMutation(beforePayload, roleName, action === "assign-role" ? "assign" : "revoke");
     if (!change.changed) {
       toast(action === "assign-role" ? "Role is already assigned" : "Role is not assigned", "error");
       return;
     }
     await prepareOperation({
+      ...origin,
       method: "PUT",
       path,
       body: change.body,
@@ -635,12 +755,15 @@ async function prepareAccessOperation(action) {
   const permissions = $("#access-permissions").value;
   const path = appendQuery("/v2/security/role", { name: roleName });
   const beforePayload = await readback(path);
+  assertOperationContext({ ...origin, path });
+  assertPreparationCurrent(origin);
   const change = buildRoleResourceMutation(beforePayload, resourceName, permissions, action === "grant-resource" ? "grant" : "revoke");
   if (!change.changed) {
     toast(action === "grant-resource" ? "This exact privilege is already granted" : "Resource is not granted", "error");
     return;
   }
   await prepareOperation({
+    ...origin,
     method: "PUT",
     path,
     body: change.body,
@@ -659,6 +782,52 @@ async function prepareAccessOperation(action) {
       if (row) row.resources = change.body.Resources.length;
     },
   });
+}
+
+async function prepareWebAppOperation(name) {
+  const origin = operationOrigin();
+  const path = appendQuery("/v2/web-app", { name });
+  const beforePayload = await readback(path, { unredacted: true });
+  assertOperationContext({ ...origin, path });
+  assertPreparationCurrent(origin);
+  const current = unwrapIrisResult(beforePayload);
+  const change = buildWebAppAvailabilityMutation(beforePayload, name, !current.Enabled);
+  if (!change.changed) throw new TypeError("Application state has already changed; refresh the view");
+  await prepareOperation({
+    ...origin,
+    method: "PUT", path, body: change.body,
+    label: `${change.body.Enabled ? "Enable" : "Disable"} ${name}`,
+    target: `Web application ${name}`,
+    risk: change.body.Enabled ? "mutation" : "destructive",
+    confirmation: `${change.body.Enabled ? "ENABLE" : "DISABLE"} WEB APP ${name}`.toUpperCase(),
+    verification: { ...change.verification, readPath: path },
+    precondition: { ...change.precondition, readPath: path },
+    beforePayload,
+    beforeSummary: change.beforeSummary,
+    expectedSummary: change.expectedSummary,
+    demoApply: () => {
+      demo.webappDetails[name] = { ...demo.webappDetails[name], ...change.body };
+      const row = demo.webapps.find((item) => item.name === name);
+      if (row) row.enabled = change.body.Enabled;
+      const rest = demo.restCatalog.find((item) => item.name === name);
+      if (rest) rest.enabled = change.body.Enabled;
+    },
+  });
+}
+
+async function inspectRestSpec(index) {
+  const entry = state.restCatalog[index];
+  const output = $("#rest-spec-results");
+  if (!entry || !output || !entry.specPath) return;
+  output.innerHTML = '<div class="loading"><span></span><p>Reading OpenAPI documentation…</p></div>';
+  try {
+    const payload = state.demo ? demo.restSpec : await loadRestSpec(fetch.bind(globalThis), state.restOrigin, entry.specPath);
+    const spec = summarizeOpenApi(payload);
+    output.innerHTML = shellCard(`${redactSensitiveText(spec.title)}${spec.version ? ` · ${redactSensitiveText(spec.version)}` : ""}`,
+      `<p class="rest-caption">${escapeHtml(redactSensitiveText(entry.name))} · ${spec.total} documented operations${spec.total > spec.operations.length ? `; showing the first ${spec.operations.length}` : ""}. This is read-only documentation.</p>${table(spec.operations.map((item) => ({ method: item.method, path: redactSensitiveText(item.path), summary: redactSensitiveText(item.summary) })), [["method","Method"],["path","Path"],["summary","Summary"]], { empty: "This specification contains no operations" })}`);
+  } catch (error) {
+    output.innerHTML = `<div class="error-state"><span>!</span><h2>OpenAPI unavailable</h2><p>${escapeHtml(redactSensitiveText(error.message))}</p></div>`;
+  }
 }
 
 function bindTimelineFilters() {
@@ -688,6 +857,7 @@ function renderExplorer() {
 async function render() {
   const revision = ++state.renderRevision;
   const view = state.view;
+  const successfulBefore = state.client.successfulRequests;
   state.busy = true;
   $("#refresh-button").disabled = true;
   const content = $("#content");
@@ -704,7 +874,8 @@ async function render() {
     if (revision !== state.renderRevision) return;
     content.innerHTML = markup;
     bindDynamicControls();
-    setHealth(true);
+    if (state.demo || state.client.successfulRequests > successfulBefore) setHealth(true);
+    else if (view !== "explorer") setHealth(false);
   } catch (error) {
     if (revision !== state.renderRevision) return;
     content.innerHTML = `<div class="error-state"><span>!</span><h2>Unable to load this view</h2><p>${escapeHtml(error.message)}</p><button class="primary" id="retry-button">Try again</button></div>`;
@@ -738,6 +909,14 @@ function bindDynamicControls() {
     catch (error) { toast(error.message, "error"); }
     finally { button.disabled = false; }
   }));
+  $$('[data-webapp-action]').forEach((button) => button.addEventListener("click", async () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await prepareWebAppOperation(button.dataset.webappAction); }
+    catch (error) { toast(error.message, "error"); }
+    finally { button.disabled = false; }
+  }));
+  bindRestSpecButtons();
   if (state.view === "logs") bindTimelineFilters();
   if (state.view === "explorer") bindExplorer();
 }
@@ -784,6 +963,7 @@ function updateSafetyBadge() {
 }
 
 async function executeExplorerRequest() {
+  const explorerRevision = ++state.explorerRequestRevision;
   let request;
   try {
     request = prepareExplorerRequest({
@@ -802,24 +982,32 @@ async function executeExplorerRequest() {
   }
   const { method, path, body } = request;
   if (classifySafety(method, path) !== "read") {
-    await prepareOperation({ method, path, body, fromExplorer: true, label: `${method} ${path}`, target: "API explorer target" });
+    await prepareOperation({ method, path, body, fromExplorer: true, explorerRevision, label: `${method} ${path}`, target: "API explorer target" });
     return;
   }
-  await runOperation({ method, path, body, fromExplorer: true });
+  await runOperation({ method, path, body, fromExplorer: true, explorerRevision });
 }
 
 async function prepareOperation(input) {
   const operation = { ...input };
-  operation.context = { ...state.connectionContext };
+  operation.preparationId ||= ++state.operationPreparationRevision;
+  operation.context = input.context || { ...state.connectionContext };
+  operation.boundConnection = input.boundConnection || currentOperationContext();
+  assertOperationContext(operation);
+  assertPreparationCurrent(operation);
   const inferred = operation.verification || inferVerification(operation.method, operation.path);
   if (inferred) {
     const beforePayload = operation.beforePayload ?? await readback(inferred.readPath);
+    assertOperationContext(operation);
     operation.verification = captureVerificationBaseline(inferred, beforePayload);
+    if (!operation.precondition) operation.precondition = captureProcessPrecondition(inferred, beforePayload);
     operation.beforeSummary = operation.beforeSummary || summarizeReadback(operation.verification, beforePayload);
     operation.expectedSummary = operation.expectedSummary || operation.verification.description;
   }
   operation.label = redactOperationPath(operation.label || `${operation.method} ${operation.path}`);
   operation.target = operation.target || "IRIS resource";
+  assertOperationContext(operation);
+  assertPreparationCurrent(operation);
   state.pendingOperation = operation;
   const phrase = operation.confirmation || confirmationPhrase(operation.method, operation.path);
   const risk = operation.risk || classifySafety(operation.method, operation.path);
@@ -834,6 +1022,30 @@ async function prepareOperation(input) {
   $("#confirmation-input").value = "";
   $("#confirm-submit").disabled = true;
   $("#confirm-dialog").showModal();
+}
+
+function currentOperationContext() {
+  return { revision: state.client.connectionRevision, demo: state.demo, epoch: state.connectionEpoch };
+}
+
+function operationOrigin() {
+  return { context: { ...state.connectionContext }, boundConnection: currentOperationContext(), preparationId: ++state.operationPreparationRevision };
+}
+
+function assertPreparationCurrent(operation) {
+  if (operation.preparationId === state.operationPreparationRevision) return;
+  const error = new IrisApiError("A newer operation has replaced this preview; review it before continuing", { path: operation.path });
+  error.operationBlocked = true;
+  error.guardStatus = "stale";
+  throw error;
+}
+
+function assertOperationContext(operation) {
+  if (sameOperationContext(operation.boundConnection, currentOperationContext())) return;
+  const error = new IrisApiError("IRIS connection changed after preview; reopen and review this operation", { path: operation.path });
+  error.operationBlocked = true;
+  error.guardStatus = "connection-changed";
+  throw error;
 }
 
 function recordJournal(operation, { resultStatus, verificationStatus, verificationSummary, durationMs }) {
@@ -855,11 +1067,19 @@ function recordJournal(operation, { resultStatus, verificationStatus, verificati
 async function verifyOperation(operation) {
   if (!operation.verification) return { status: "unverified", summary: "No automatic readback is defined" };
   let last = { status: "error", summary: "Readback did not run" };
-  const attempts = state.demo ? 1 : 6;
+  const { attempts, intervalMs } = verificationPollPolicy(operation.verification.kind, operation.boundConnection.demo);
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (attempt) await new Promise((resolve) => setTimeout(resolve, 500));
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    if (!sameOperationContext(operation.boundConnection, currentOperationContext())) {
+      return { status: "error", summary: "Connection changed after execution; readback was canceled" };
+    }
     try {
-      const payload = await readback(operation.verification.readPath);
+      const payload = await readback(operation.verification.readPath, {
+        unredacted: operation.verification.kind === "webAppSnapshot",
+      });
+      if (!sameOperationContext(operation.boundConnection, currentOperationContext())) {
+        return { status: "error", summary: "Connection changed during readback; result cannot be verified" };
+      }
       last = evaluateVerification(operation.verification, payload);
     } catch (error) {
       last = evaluateVerification(operation.verification, null, { status: error.status || 0 });
@@ -869,19 +1089,35 @@ async function verifyOperation(operation) {
     }
     if (["verified", "error"].includes(last.status)) break;
   }
-  if (!state.demo && operation.verification.kind === "taskRun" && ["mismatch", "pending"].includes(last.status)) {
+  if (!operation.boundConnection.demo && operation.verification.kind === "taskRun" && ["mismatch", "pending"].includes(last.status)) {
     return { status: "pending", summary: "Request succeeded; task completion was not observed within the readback window" };
   }
-  if (state.demo && last.status === "verified") return { ...last, status: "demo-verified", summary: `Demo fixture: ${last.summary}` };
+  if (operation.boundConnection.demo && last.status === "verified") return { ...last, status: "demo-verified", summary: `Demo fixture: ${last.summary}` };
   return last;
 }
 
 async function runOperation(operation) {
   const { method, path, body, fromExplorer = false } = operation;
+  operation.boundConnection ||= currentOperationContext();
+  const executionDemo = operation.boundConnection.demo;
   const started = performance.now();
+  let requestStarted = false;
   try {
+    assertOperationContext(operation);
     if (operation.precondition) {
-      const latest = await readback(operation.precondition.readPath);
+      let latest;
+      try {
+        latest = await readback(operation.precondition.readPath, {
+          unredacted: operation.precondition.kind === "webAppSnapshot",
+        });
+      } catch (cause) {
+        assertOperationContext(operation);
+        const error = new IrisApiError("Precondition could not be read; no change was sent", { path, status: cause.status || 0 });
+        error.operationBlocked = true;
+        error.guardStatus = "invalid";
+        throw error;
+      }
+      assertOperationContext(operation);
       const guard = evaluatePrecondition(operation.precondition, latest);
       if (!guard.ok) {
         const elapsed = Math.round(performance.now() - started);
@@ -898,57 +1134,66 @@ async function runOperation(operation) {
     }
     if (operation.verification?.kind === "taskRun") {
       const latestBaseline = await readback(operation.verification.readPath);
+      assertOperationContext(operation);
       operation.verification = captureVerificationBaseline(operation.verification, latestBaseline);
       operation.beforeSummary = summarizeReadback(operation.verification, latestBaseline);
     }
-    const result = state.demo
+    assertOperationContext(operation);
+    requestStarted = !executionDemo;
+    const result = executionDemo
       ? { demo: true, simulated: true, sentToIris: false, method, path, body: redactSensitive(body ?? null) }
-      : await state.client.request(path, { method, body });
-    if (state.demo && classifySafety(method, path) !== "read") applyDemoOperation(operation);
+      : classifySafety(method, path) === "read" && method.toUpperCase() === "POST"
+        ? await state.client.requestAsync(path, { method, body })
+        : await state.client.request(path, { method, body });
+    if (classifySafety(method, path) === "read") assertOperationContext(operation);
+    if (executionDemo && classifySafety(method, path) !== "read") applyDemoOperation(operation);
     const verification = classifySafety(method, path) === "read"
       ? { status: "not-required", summary: "Read-only request" }
       : await verifyOperation(operation);
     const elapsed = Math.round(performance.now() - started);
     if (classifySafety(method, path) !== "read") {
       recordJournal(operation, {
-        resultStatus: state.demo ? "simulated" : "executed",
+        resultStatus: executionDemo ? "simulated" : "executed",
         verificationStatus: verification.status,
         verificationSummary: verification.summary,
         durationMs: elapsed,
       });
     }
-    if (fromExplorer && $("#response-output")) {
-      $("#response-status").textContent = `${explorerOutcomeLabel({ demo: state.demo, safety: classifySafety(method, path), verificationStatus: verification.status })} · ${verification.status} · ${elapsed} ms`;
+    if (fromExplorer && state.view === "explorer" && operation.explorerRevision === state.explorerRequestRevision && $("#response-output")) {
+      $("#response-status").textContent = `${explorerOutcomeLabel({ demo: executionDemo, safety: classifySafety(method, path), verificationStatus: verification.status })} · ${verification.status} · ${elapsed} ms`;
       $("#response-output").textContent = JSON.stringify(redactSensitive({ response: result, verification }), null, 2);
     }
-    if (verification.status === "verified") toast("Operation executed and readback verified");
-    else if (verification.status === "demo-verified") toast("Demo operation simulated with verified readback");
-    else if (verification.status === "unverified") toast(state.demo ? "Demo operation simulated; no automatic readback" : "Operation executed; manual verification required", "error");
-    else if (verification.status === "pending") toast("Operation executed; verification is still pending", "error");
-    else if (verification.status === "not-required") toast(state.demo ? "Demo request simulated; no IRIS request was sent" : "Request completed");
-    else toast(`Operation executed; ${verification.summary}`, "error");
+    if (!fromExplorer || operation.explorerRevision === state.explorerRequestRevision && state.view === "explorer") {
+      if (verification.status === "verified") toast("Operation executed and readback verified");
+      else if (verification.status === "demo-verified") toast("Demo operation simulated with verified readback");
+      else if (verification.status === "unverified") toast(executionDemo ? "Demo operation simulated; no automatic readback" : "Operation executed; manual readback required", "error");
+      else if (verification.status === "pending") toast("Operation executed; verification is still pending", "error");
+      else if (verification.status === "not-required") toast(executionDemo ? "Demo request simulated; no IRIS request was sent" : "Request completed");
+      else toast(`Operation executed; ${verification.summary}`, "error");
+    }
     return result;
   } catch (error) {
     const elapsed = Math.round(performance.now() - started);
     if (classifySafety(method, path) !== "read" && !error.journalRecorded) {
       recordJournal(operation, {
-        resultStatus: "failed",
-        verificationStatus: "not-run",
+        resultStatus: error.operationBlocked ? "blocked" : requestStarted && !error.status ? "uncertain" : "failed",
+        verificationStatus: error.operationBlocked ? error.guardStatus : "not-run",
         verificationSummary: redactSensitiveText(error.message),
         durationMs: elapsed,
       });
     }
-    if (fromExplorer && $("#response-output")) {
+    if (fromExplorer && state.view === "explorer" && operation.explorerRevision === state.explorerRequestRevision && $("#response-output")) {
       $("#response-status").textContent = `Error${error.status ? ` \u00b7 HTTP ${error.status}` : ""}`;
       $("#response-output").textContent = JSON.stringify(redactSensitive({ message: error.message, payload: error.payload }), null, 2);
     }
-    toast(error.message, "error");
+    if (!fromExplorer || operation.explorerRevision === state.explorerRequestRevision && state.view === "explorer") toast(error.message, "error");
     throw error;
   }
 }
 
 async function navigate(view) {
   if (!titles[view]) return;
+  if (view !== state.view) state.explorerRequestRevision++;
   state.view = view;
   history.replaceState(null, "", `#${view}`);
   await render();
@@ -970,12 +1215,12 @@ function updateJournalUi() {
 }
 
 let toastTimer;
-function toast(message, tone = "ok") {
+function toast(message, tone = "ok", durationMs = 3200) {
   const element = $("#toast");
   element.textContent = message;
   element.className = `toast show ${tone}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { element.className = "toast"; }, 3200);
+  toastTimer = setTimeout(() => { element.className = "toast"; }, durationMs);
 }
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
@@ -989,11 +1234,21 @@ $("#connection-button").setAttribute("data-open-connection", "");
 $$('[data-open-connection]').forEach((button) => button.addEventListener("click", () => $("#connection-dialog").showModal()));
 $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => {
   const dialog = document.getElementById(button.dataset.closeDialog);
+  if (button.dataset.closeDialog === "confirm-dialog") state.pendingOperation = null;
   dialog?.close();
 }));
-$("#connection-dialog").addEventListener("close", () => { $("#password").value = ""; });
+let nextLoginAttempt = 0;
+let pendingLoginAttempt = null;
+$("#connection-dialog").addEventListener("close", () => {
+  if ($("#connection-dialog").open) return;
+  pendingLoginAttempt = null;
+  $("#password").value = "";
+  $("#connect-submit").disabled = false;
+  $("#connect-submit").textContent = "Apply";
+});
+$("#confirm-dialog").addEventListener("cancel", () => { state.pendingOperation = null; });
 $("#confirm-dialog").addEventListener("close", () => {
-  state.pendingOperation = null;
+  if ($("#confirm-dialog").open) return;
   $("#confirmation-input").value = "";
   $("#confirm-submit").disabled = true;
 });
@@ -1001,6 +1256,8 @@ $("#connection-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const submit = $("#connect-submit");
   if (submit.disabled) return;
+  const attempt = ++nextLoginAttempt;
+  pendingLoginAttempt = attempt;
   submit.disabled = true;
   submit.textContent = "Connecting\u2026";
   const useDemo = $("#demo-mode").checked;
@@ -1008,35 +1265,35 @@ $("#connection-form").addEventListener("submit", async (event) => {
   const username = $("#username").value;
   const password = $("#password").value;
   const role = $("#role").value;
-  const previousConnection = {
-    baseUrl: state.client.baseUrl,
-    token: state.client.token,
-    refreshToken: state.client.refreshToken,
-  };
   try {
+    const candidate = new IrisAdminClient({ baseUrl, fetchImpl: state.client.fetchImpl, timeoutMs: state.client.timeoutMs });
     if (!useDemo) {
       if (!username || !password) throw new Error("Username and password are required for a live connection");
-      state.client.setConnection({ baseUrl, token: "" });
-      await state.client.login(username, password, role);
-    } else {
-      state.client.setConnection({ baseUrl, token: "" });
+      await candidate.login(username, password, role);
     }
+    if (pendingLoginAttempt !== attempt || !$("#connection-dialog").open) return;
+    state.client = candidate;
+    state.connectionEpoch++;
     state.demo = useDemo;
     state.connectionContext = useDemo
       ? { mode: "demo", instance: "demo", actor: "Demo operator" }
       : { mode: "live", instance: state.client.baseUrl, actor: username };
+    pendingLoginAttempt = null;
     $("#connection-dialog").close();
     setModeUi();
+    setHealth(true);
     toast(useDemo ? "Safe demo enabled" : "Connected to IRIS");
     await render();
   } catch (error) {
-    state.client.setConnection(previousConnection);
-    toast(error.message, "error");
+    if (pendingLoginAttempt === attempt) toast(error.message, "error");
   }
   finally {
-    $("#password").value = "";
-    submit.disabled = false;
-    submit.textContent = "Apply";
+    if (pendingLoginAttempt === attempt) {
+      pendingLoginAttempt = null;
+      $("#password").value = "";
+      submit.disabled = false;
+      submit.textContent = "Apply";
+    }
   }
 });
 $("#confirmation-input").addEventListener("input", () => {
@@ -1049,12 +1306,13 @@ $("#confirm-form").addEventListener("submit", async (event) => {
   state.pendingOperation = null;
   $("#confirm-dialog").close();
   if (operation) {
+    toast("Operation in progress; result not yet verified", "info", operation.verification?.kind === "taskRun" ? 90000 : 15000);
     try {
       await runOperation(operation);
       if (!operation.fromExplorer) await render();
     } catch {}
   }
-  state.pendingOperation = null;
+  if (state.pendingOperation === operation) state.pendingOperation = null;
 });
 
 const initial = location.hash.slice(1);

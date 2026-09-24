@@ -13,10 +13,10 @@ test("ZPM resource directory matches the ObjectScript source layout", async () =
   const dockerfile = await readFile(new URL("Dockerfile", root), "utf8");
   assert.match(moduleXml, /<SourcesRoot>src<\/SourcesRoot>/);
   assert.match(moduleXml, /<Resource Directory="cls" Name="IrisOps\.PKG"\/>/);
-  assert.equal(packageJson.version, "1.1.0");
+  assert.equal(packageJson.version, "1.2.0");
   assert.equal(packageJson.engines.node, ">=22");
-  assert.match(moduleXml, /<Version>1\.1\.0<\/Version>/);
-  assert.match(aboutClass, /Quit "1\.1\.0"/);
+  assert.match(moduleXml, /<Version>1\.2\.0<\/Version>/);
+  assert.match(aboutClass, /Quit "1\.2\.0"/);
   assert.match(ciWorkflow, /node: \[22, 24\]/);
   assert.match(compose, /ISC_DATA_DIRECTORY:\s*\/durable\/iris/);
   assert.match(compose, /iris-data:\/durable/);
@@ -34,6 +34,7 @@ test("static CSP assets load without bypassing SysAdmin API authorization", asyn
   const moduleXml = await readFile(new URL("module.xml", root), "utf8");
   assert.match(moduleXml, /<WebApplication [^>]*Name="\/csp\/ops"/);
   assert.match(moduleXml, /AutheEnabled="64"/);
+  assert.match(moduleXml, /<WebApplication [^>]*ServeFiles="1" ServeFilesTimeout="0"/);
   assert.match(moduleXml, /MatchRoles=":\{\$globalsDbRole\}"/);
   assert.match(moduleXml, /<FileCopy Name="\/web\/" Target="\$\{cspdir\}ops\/"\/>/);
   assert.doesNotMatch(moduleXml, /<CSPApplication|\{\$dbrole\}|\$\{dbrole\}/);

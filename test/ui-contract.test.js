@@ -13,7 +13,8 @@ test("HTML exposes unique controls and safe dialog actions", async () => {
   assert.equal((html.match(/type="button" data-close-dialog=/g) || []).length, 4);
   assert.equal((html.match(/type="submit"/g) || []).length, 2);
   assert.match(html, /id="confirm-submit"[^>]+disabled/);
-  assert.match(html, /assets\/styles\.css\?v=1\.1\.0/);
+  assert.match(html, /assets\/styles\.css\?v=1\.2\.0/);
+  assert.match(html, /assets\/app\.js\?v=1\.2\.0/);
 });
 
 test("responsive CSS preserves mobile navigation, connection, and dialog access", async () => {
@@ -25,6 +26,8 @@ test("responsive CSS preserves mobile navigation, connection, and dialog access"
   assert.match(css, /dialog \{ width: calc\(100vw - 22px\); \}/);
   assert.match(css, /max-height: calc\(100vh - 22px\)/);
   assert.doesNotMatch(css, /body\s*\{[^}]*min-width:\s*[1-9]\d{3}px/);
+  assert.match(css, /\.webapp-table th:last-child, \.webapp-table td:last-child/);
+  assert.match(css, /position: sticky;\s*right: 0;/);
 });
 
 test("live security tables cannot enlarge the page grid", async () => {
@@ -49,15 +52,20 @@ test("interaction bindings cover mobile connection and dialog cleanup", async ()
   assert.match(app, /\$\$\('\[data-close-dialog\]'\)/);
   assert.match(app, /connection-dialog"\)\.addEventListener\("close"/);
   assert.match(app, /confirm-dialog"\)\.addEventListener\("close"/);
-  assert.match(app, /finally\s*\{\s*\$\("#password"\)\.value = "";/);
+  assert.match(app, /pendingLoginAttempt === attempt/);
+  assert.match(app, /\$\("#password"\)\.value = "";/);
   assert.match(app, /executeExplorerRequest\(\)\.catch\(\(\) => \{\}\)/);
   assert.match(app, /addEventListener\("hashchange"/);
   assert.match(app, /\/v2\/task\/resume/);
   assert.match(app, /\/v2\/process\/resume/);
   assert.match(app, /revision !== state\.renderRevision/);
   assert.match(app, /if \(submit\.disabled\) return/);
-  assert.match(app, /const previousConnection = \{[\s\S]*baseUrl: state\.client\.baseUrl,[\s\S]*token: state\.client\.token,[\s\S]*refreshToken: state\.client\.refreshToken,[\s\S]*\};/);
-  assert.match(app, /state\.client\.setConnection\(previousConnection\)/);
+  assert.match(app, /Operation in progress; result not yet verified/);
+  assert.match(app, /operation\.verification\?\.kind === "taskRun" \? 90000 : 15000/);
+  assert.match(app, /verificationPollPolicy\(operation\.verification\.kind, operation\.boundConnection\.demo\)/);
+  assert.match(app, /const candidate = new IrisAdminClient/);
+  assert.match(app, /pendingLoginAttempt !== attempt/);
+  assert.match(app, /state\.client = candidate/);
   assert.match(app, /aria-current/);
   assert.match(app, /renderInfrastructure/);
   assert.match(app, /renderOAuth/);
@@ -72,6 +80,9 @@ test("interaction bindings cover mobile connection and dialog cleanup", async ()
   assert.match(app, /appendQuery\("\/v2\/security\/user", \{ name: user\.name \}\)/);
   assert.match(app, /reconcileWebAppSummary/);
   assert.match(app, /appendQuery\("\/v2\/web-app", \{ name: webapp\.name \}\)/);
+  assert.match(app, /operations\.js\?v=1\.2\.0/);
+  assert.match(app, /rest-discovery\.js\?v=1\.2\.0/);
+  assert.doesNotMatch(app, /dev-webapps/);
 });
 
 test("navigation exposes every mandatory management area", async () => {
@@ -111,6 +122,9 @@ test("verified operations and incident timeline expose their reviewer controls",
   assert.match(app, /operation\.verification\?\.kind === "taskRun"/);
   const runOperation = app.slice(app.indexOf("async function runOperation"), app.indexOf("async function navigate"));
   assert.ok(runOperation.indexOf("evaluatePrecondition") < runOperation.indexOf("await state.client.request(path"));
+  assert.match(runOperation, /if \(classifySafety\(method, path\) === "read"\) assertOperationContext\(operation\)/);
+  assert.match(app, /if \(state\.view === "access" && state\.renderRevision === revision\) state\.accessCatalog/);
+  assert.match(app, /if \(state\.demo \|\| state\.view !== "webapps" \|\| state\.renderRevision !== revision\) return;/);
   assert.match(app, /normalizeJournalEntries/);
   assert.match(css, /\.timeline-controls/);
   assert.match(css, /\.operation-flow/);

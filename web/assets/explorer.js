@@ -1,4 +1,4 @@
-import { endpointCatalog, normalizeBaseUrl, resolveApiUrl } from "./api.js?v=1.1.0";
+import { endpointCatalog, normalizeBaseUrl, resolveApiUrl } from "./api.js?v=1.2.0";
 
 const NO_BODY_METHODS = new Set(["GET", "HEAD"]);
 
@@ -25,6 +25,14 @@ export function prepareExplorerRequest({ method = "GET", path = "", rawBody = ""
   const verb = String(method).toUpperCase();
   const target = String(path).trim();
   const resolvedUrl = resolveApiUrl(baseUrl, target);
+  const normalizedBase = normalizeBaseUrl(baseUrl);
+  const base = new URL(normalizedBase, "https://iris-ops.invalid");
+  const resolved = new URL(resolvedUrl, base.origin);
+  const basePath = base.pathname.replace(/\/+$/, "") || "/";
+  if (resolved.origin !== base.origin || (basePath !== "/" && resolved.pathname !== basePath
+    && !resolved.pathname.startsWith(`${basePath}/`))) {
+    throw new TypeError("Explorer requests must remain inside the selected IRIS Admin API base path");
+  }
   let body;
   if (methodAcceptsBody(verb) && String(rawBody).trim()) {
     try { body = JSON.parse(rawBody); }
