@@ -45,11 +45,30 @@ function Invoke-RecordedCommand {
 }
 
 function Test-HttpResource {
-    param([Parameter(Mandatory = $true)][string]$Url)
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [string]$SourcePath
+    )
 
     $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 20
     if ($response.StatusCode -ne 200) {
         throw "$Url returned HTTP $($response.StatusCode)"
+    }
+    if ($SourcePath) {
+        $expected = (Get-FileHash -LiteralPath $SourcePath -Algorithm SHA256).Hash
+        $hash = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $actual = [System.BitConverter]::ToString(
+                $hash.ComputeHash($response.RawContentStream.ToArray())
+            ).Replace("-", "")
+        }
+        finally {
+            $hash.Dispose()
+        }
+        if ($actual -ne $expected) {
+            throw "Deployed bytes do not match source: $Url"
+        }
+        "PASS SHA-256 $expected $Url" | Tee-Object -FilePath $ReportPath -Append
     }
     "PASS HTTP $($response.StatusCode) $Url" | Tee-Object -FilePath $ReportPath -Append
 }
@@ -115,12 +134,11 @@ try {
         throw "IRIS Ops Studio did not become reachable within five minutes"
     }
 
-    Test-HttpResource -Url "${PortalBaseUrl}assets/styles.css"
-    Test-HttpResource -Url "${PortalBaseUrl}assets/api.js"
-    Test-HttpResource -Url "${PortalBaseUrl}assets/explorer.js"
-    Test-HttpResource -Url "${PortalBaseUrl}assets/sanitization.js"
-    Test-HttpResource -Url "${PortalBaseUrl}assets/operations.js"
-    Test-HttpResource -Url "${PortalBaseUrl}assets/app.js"
+    $webRoot = Join-Path $ProjectRoot "web"
+    Get-ChildItem -LiteralPath $webRoot -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($webRoot.Length + 1).Replace("\", "/")
+        Test-HttpResource -Url "${PortalBaseUrl}${relative}" -SourcePath $_.FullName
+    }
 
     # Reject a transient HTTP success from a container that exits immediately
     # after its post-start work.
