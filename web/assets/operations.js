@@ -1,4 +1,4 @@
-import { redactSensitiveText } from "./sanitization.js?v=1.1.0";
+import { redactSensitiveText } from "./sanitization.js?v=1.2.0";
 
 const USER_MUTABLE_FIELDS = [
   "AccountNeverExpires",
@@ -20,7 +20,38 @@ const USER_MUTABLE_FIELDS = [
 ];
 
 const ROLE_MUTABLE_FIELDS = ["Description", "GrantedRoles", "EscalationOnly", "Resources"];
-const SECRET_QUERY_KEY = /^(?:password|secret|token|private.?key|credential|authorization|api.?key|access.?key|access.?token|refresh.?token|id.?token)$/i;
+// Application properties come from the official SysAdmin API v2 Application schema.
+// The guided workflow changes Enabled only, but sends the reviewed configuration
+// back intact so a PUT cannot silently discard unrelated application settings.
+const WEB_APP_FIELDS = [
+  "AutheEnabled", "AutoCompile", "ChangePasswordPage", "CookiePath", "CorsAllowlist",
+  "CorsCredentialsAllowed", "CorsHeadersList", "CSPZENEnabled", "CSRFToken",
+  "DeepSeeEnabled", "Description", "DispatchClass", "Enabled", "ErrorPage",
+  "EventClass", "GroupById", "iKnowEnabled", "InbndWebServicesEnabled",
+  "IsNameSpaceDefault", "JWTAuthEnabled", "JWTAccessTokenTimeout",
+  "JWTRefreshTokenTimeout", "LockCSPName", "LoginPage", "MatchRoles",
+  "NameSpace", "Package", "Path", "PermittedClasses", "Recurse",
+  "RedirectEmptyPath", "Resource", "ServeFiles", "ServeFilesTimeout",
+  "SuperClass", "Timeout", "TraceEnabled", "TwoFactorEnabled", "Type",
+  "UseCookies", "SessionScope", "UserCookieScope", "WSGIAppLocation",
+  "WSGIAppName", "WSGICallable", "WSGIDebug", "WSGIType",
+];
+const WEB_APP_READONLY_FIELDS = ["Name", "AuthenticationMethods"];
+const SECRET_QUERY_KEY = /^(?:password|secret|token|private.?key|credential|authorization|auth[_. -]?header|client[_. -]?secret|api.?key|access.?key|access.?token|refresh.?token|id.?token)$/i;
+const SECRET_PATH_LABEL = SECRET_QUERY_KEY;
+const ACTIVE_PROCESS_STATES = new Set([
+  "LOCK", "OPEN", "CLOS", "USE", "READ", "WRT", "GET", "GSET", "GKLL", "GORD", "GQRY",
+  "GDEF", "ZF", "HANG", "JOB", "EXAM", "BRD", "INCR", "BSET", "BGET", "EVT",
+  "SLCT", "SEM", "IPQ", "DEQ", "VSET", "VKLL", "RUN",
+]);
+
+// IRIS Task Manager can take up to 60 seconds to pick up a Run request. Other
+// mutations should keep the short readback window so they fail promptly.
+export function verificationPollPolicy(kind, demo = false) {
+  if (demo) return { attempts: 1, intervalMs: 0 };
+  if (kind === "taskRun") return { attempts: 75, intervalMs: 1000 };
+  return { attempts: 6, intervalMs: 500 };
+}
 
 function unwrap(payload) {
   return payload && typeof payload === "object" && "result" in payload ? payload.result : payload;
@@ -35,6 +66,13 @@ function field(value, name) {
   if (value[name] !== undefined) return value[name];
   const actual = Object.keys(value).find((key) => key.toLowerCase() === String(name).toLowerCase());
   return actual ? value[actual] : undefined;
+}
+
+// These built-in and installer identities must never be offered by the guided
+// user-role workflow. The advanced API remains subject to IRIS authorization.
+export function isProtectedUser(name) {
+  return /^_/.test(String(name || ""))
+    || /^(?:admin|cspsystem|iam|superuser|unknownuser|irisowner)$/i.test(String(name || ""));
 }
 
 function toList(value) {
@@ -84,15 +122,17 @@ export function reconcileUserSummary(summary, detailPayload) {
 export function reconcileWebAppSummary(summary, detailPayload) {
   const detail = unwrap(detailPayload);
   if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
-    return { ...summary, enabled: "Unknown" };
+    return { ...summary, enabled: "Unknown", isDefault: "Unknown" };
   }
   const enabled = field(detail, "Enabled");
+  const isDefault = field(detail, "IsNameSpaceDefault");
   const namespace = field(detail, "NameSpace") ?? field(detail, "Namespace");
   const dispatch = field(detail, "DispatchClass");
   const resource = field(detail, "Resource");
   return {
     ...summary,
     enabled: typeof enabled === "boolean" ? enabled : "Unknown",
+    isDefault: typeof isDefault === "boolean" ? isDefault : "Unknown",
     ...(namespace !== undefined ? { namespace } : {}),
     ...(dispatch !== undefined ? { dispatch } : {}),
     ...(resource !== undefined ? { resource } : {}),
@@ -148,11 +188,85 @@ function sortedResources(value) {
   return [...value].sort((left, right) => left.Name.localeCompare(right.Name) || left.Permissions.localeCompare(right.Permissions));
 }
 
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => [key, stableValue(item)]));
+  }
+  return value;
+}
+
+function containsRedactionMarker(value) {
+  if (typeof value === "string") return value.includes("••••••••") || value.includes("[REDACTED");
+  if (Array.isArray(value)) return value.some(containsRedactionMarker);
+  if (value && typeof value === "object") return Object.values(value).some(containsRedactionMarker);
+  return false;
+}
+
+function canonicalWebApp(payload) {
+  const app = unwrap(payload);
+  if (!app || typeof app !== "object" || Array.isArray(app)) throw new TypeError("Web application detail must be an object");
+  const allowed = new Set([...WEB_APP_FIELDS, ...WEB_APP_READONLY_FIELDS].map((name) => name.toLowerCase()));
+  const unknown = Object.keys(app).filter((name) => !allowed.has(name.toLowerCase()));
+  if (unknown.length) throw new TypeError("Web application detail contains fields outside the documented update schema");
+  if (containsRedactionMarker(app)) throw new TypeError("Web application detail is redacted and cannot be used for an update");
+  if (typeof field(app, "Enabled") !== "boolean") throw new TypeError("Web application Enabled must be a boolean");
+  if (typeof field(app, "IsNameSpaceDefault") !== "boolean") {
+    throw new TypeError("Web application default status is required for a safe update");
+  }
+  if (typeof field(app, "NameSpace") !== "string" || !field(app, "NameSpace").trim()) {
+    throw new TypeError("Web application NameSpace is required for a safe update");
+  }
+  return stableValue(pickCanonical(app, WEB_APP_FIELDS));
+}
+
+export function webAppGuidedEligibility(name, namespace, isDefault) {
+  const appName = String(name || "").trim();
+  const ns = String(namespace || "").trim();
+  if (!appName.startsWith("/") || appName.includes("//")
+    || /[?#\\%\u0000-\u001f]/.test(appName)
+    || /(?:^|\/)\.{1,2}(?:\/|$)/.test(appName)) {
+    return { ok: false, reason: "Application name is not a safe web path" };
+  }
+  if (!ns || ns.toUpperCase() === "%SYS") return { ok: false, reason: "System or unknown namespace is inventory-only" };
+  if (isDefault !== false) return { ok: false, reason: "Default or unknown namespace application is inventory-only" };
+  if (/^\/(?:api\/admin|api\/mgmnt|csp\/ops|csp\/sys)(?:\/|$)/i.test(appName)) {
+    return { ok: false, reason: "Management and Ops Studio applications are protected" };
+  }
+  return { ok: true, reason: "" };
+}
+
+export function buildWebAppAvailabilityMutation(payload, name, enabled) {
+  if (typeof enabled !== "boolean") throw new TypeError("Requested availability must be a boolean");
+  const app = unwrap(payload);
+  const before = canonicalWebApp(app);
+  const appName = String(name || "").trim();
+  const actualName = field(app, "Name");
+  // IRIS 2026.2 identifies the detail by the GET query and omits Name from
+  // its result. If a server does return Name, it must still match exactly.
+  if (actualName !== undefined && actualName !== appName) throw new TypeError("Web application detail does not match the selected name");
+  const eligibility = webAppGuidedEligibility(appName, before.NameSpace, before.IsNameSpaceDefault);
+  if (!eligibility.ok) throw new TypeError(eligibility.reason);
+  const body = clone(before);
+  body.Enabled = enabled;
+  const expected = stableValue(body);
+  return {
+    body,
+    changed: before.Enabled !== enabled,
+    beforeSummary: `${appName}: ${before.Enabled ? "Enabled" : "Disabled"}`,
+    expectedSummary: `${appName}: ${enabled ? "Enabled" : "Disabled"}; other documented settings unchanged`,
+    precondition: { kind: "webAppSnapshot", name: appName, expected: before },
+    verification: { kind: "webAppSnapshot", name: appName, expected, description: "Availability changed; other documented settings unchanged" },
+  };
+}
+
 function canonicalSnapshot(kind, payload) {
   const entity = unwrap(payload) || {};
   if (!entity || typeof entity !== "object" || Array.isArray(entity)) throw new TypeError("Readback must contain an object");
   const fields = kind === "userSnapshot" ? USER_MUTABLE_FIELDS : ROLE_MUTABLE_FIELDS;
   const snapshot = pickCanonical(entity, fields);
+  if (containsRedactionMarker(snapshot)) throw new TypeError("Security detail is redacted and cannot be used for an update or verification");
   for (const name of kind === "userSnapshot" ? ["Roles", "EscalationRoles"] : ["GrantedRoles"]) {
     if (snapshot[name] !== undefined) snapshot[name] = sortedStrings(requireStringList(snapshot[name], name));
   }
@@ -160,12 +274,47 @@ function canonicalSnapshot(kind, payload) {
   return Object.fromEntries(Object.entries(snapshot).sort(([left], [right]) => left.localeCompare(right)));
 }
 
+function canonicalProcessSnapshot(payload, expectedPid) {
+  const process = unwrap(payload);
+  if (!process || typeof process !== "object" || Array.isArray(process)) throw new TypeError("Process detail must be an object");
+  const pid = field(process, "Pid");
+  const namespace = field(process, "Nspace") ?? field(process, "Namespace");
+  const username = field(process, "Username") ?? field(process, "User");
+  if (!/^\d+$/.test(String(pid ?? "")) || String(pid) !== String(expectedPid)
+    || typeof namespace !== "string" || !namespace || typeof username !== "string" || !username) {
+    throw new TypeError("Process identity is incomplete or does not match the selected PID");
+  }
+  const snapshot = { Pid: String(pid), Nspace: namespace, Username: username };
+  for (const name of ["Routine", "Job", "ParentPid", "State"]) {
+    const value = field(process, name);
+    if (value !== undefined) snapshot[name] = String(value);
+  }
+  return snapshot;
+}
+
+export function captureProcessPrecondition(plan, payload) {
+  if (!plan || !new Set(["processState", "notFound"]).has(plan.kind)) return null;
+  const id = new URL(plan.readPath, "https://iris.invalid").searchParams.get("id");
+  return { kind: "processSnapshot", readPath: plan.readPath, id, expected: canonicalProcessSnapshot(payload, id) };
+}
+
+export function sameOperationContext(expected, current) {
+  return Boolean(expected && current && expected.revision === current.revision
+    && expected.demo === current.demo && expected.epoch === current.epoch);
+}
+
 export function evaluatePrecondition(plan, payload) {
-  if (!plan || !new Set(["userSnapshot", "roleSnapshot"]).has(plan.kind)) {
+  if (!plan || !new Set(["userSnapshot", "roleSnapshot", "webAppSnapshot", "processSnapshot"]).has(plan.kind)) {
     return { ok: false, status: "invalid", summary: "No valid concurrency precondition is defined" };
   }
   try {
-    const actual = canonicalSnapshot(plan.kind, payload);
+    if (plan.kind === "webAppSnapshot" && field(unwrap(payload), "Name") !== undefined
+      && field(unwrap(payload), "Name") !== plan.name) {
+      return { ok: false, status: "invalid", summary: "Latest readback is for a different application" };
+    }
+    const actual = plan.kind === "webAppSnapshot" ? canonicalWebApp(payload)
+      : plan.kind === "processSnapshot" ? canonicalProcessSnapshot(payload, plan.id)
+        : canonicalSnapshot(plan.kind, payload);
     const expected = plan.expected;
     const ok = JSON.stringify(actual) === JSON.stringify(expected);
     return {
@@ -181,7 +330,14 @@ export function evaluatePrecondition(plan, payload) {
 export function redactOperationPath(value) {
   const text = String(value || "");
   const [route, query = ""] = text.split("?", 2);
-  if (!query) return route;
+  const parts = route.split("/");
+  for (let index = 1; index < parts.length; index += 1) {
+    let label = parts[index - 1];
+    try { label = decodeURIComponent(label); } catch {}
+    if (SECRET_PATH_LABEL.test(label) && parts[index]) parts[index] = "REDACTED";
+  }
+  const safeRoute = redactSensitiveText(parts.join("/"));
+  if (!query) return safeRoute;
   const safeQuery = query.split("&").map((part) => {
     const separator = part.indexOf("=");
     if (separator < 0) return part;
@@ -190,7 +346,7 @@ export function redactOperationPath(value) {
     try { decodedKey = decodeURIComponent(key); } catch {}
     return SECRET_QUERY_KEY.test(decodedKey) ? `${key}=REDACTED` : part;
   }).join("&");
-  return `${route}?${safeQuery}`;
+  return `${safeRoute}?${safeQuery}`;
 }
 
 export function buildUserRoleMutation(userPayload, roleName, action) {
@@ -207,16 +363,19 @@ export function buildUserRoleMutation(userPayload, roleName, action) {
     : beforeRoles.filter((item) => item !== role);
   const body = { ...pickCanonical(user, USER_MUTABLE_FIELDS), Roles: afterRoles };
   if (escalationRoles !== undefined) body.EscalationRoles = escalationRoles;
+  const beforeSnapshot = canonicalSnapshot("userSnapshot", user);
+  const expectedSnapshot = canonicalSnapshot("userSnapshot", body);
   return {
     body,
     changed: action === "assign" ? !exists : exists,
     beforeSummary: `Roles: ${beforeRoles.join(", ") || "none"}`,
     expectedSummary: `Roles: ${afterRoles.join(", ") || "none"}`,
-    precondition: { kind: "userSnapshot", expected: canonicalSnapshot("userSnapshot", user) },
+    precondition: { kind: "userSnapshot", expected: beforeSnapshot },
     verification: {
       kind: "arrayExact",
       field: "Roles",
       expectedValues: sortedStrings(afterRoles),
+      expectedSnapshot,
       description: `Roles exactly match: ${afterRoles.join(", ") || "none"}`,
     },
   };
@@ -238,17 +397,20 @@ export function buildRoleResourceMutation(rolePayload, resourceName, permissions
     : remaining;
   const body = { ...pickCanonical(role, ROLE_MUTABLE_FIELDS), Resources: afterResources };
   if (grantedRoles !== undefined) body.GrantedRoles = grantedRoles;
+  const beforeSnapshot = canonicalSnapshot("roleSnapshot", role);
+  const expectedSnapshot = canonicalSnapshot("roleSnapshot", body);
   const currentPermissions = current ? safePermissions(field(current, "Permissions")) : "";
   return {
     body,
     changed: action === "grant" ? currentPermissions !== permissionSet : Boolean(current),
     beforeSummary: `${resource}: ${currentPermissions || "not granted"}`,
     expectedSummary: `${resource}: ${action === "grant" ? permissionSet : "not granted"}`,
-    precondition: { kind: "roleSnapshot", expected: canonicalSnapshot("roleSnapshot", role) },
+    precondition: { kind: "roleSnapshot", expected: beforeSnapshot },
     verification: {
       kind: "resourceSetExact",
       field: "Resources",
       expectedResources: sortedResources(afterResources),
+      expectedSnapshot,
       description: `Resource grants exactly match the reviewed update`,
     },
   };
@@ -291,7 +453,7 @@ export function captureVerificationBaseline(plan, payload) {
   if (!plan) return null;
   const result = unwrap(payload) || {};
   if (plan.kind === "taskRun") {
-    return { ...plan, before: Object.fromEntries(plan.fields.map((name) => [name, field(result, name) ?? ""])) };
+    return { ...plan, before: Object.fromEntries([...plan.fields, "Status", "Error"].map((name) => [name, field(result, name) ?? ""])) };
   }
   return { ...plan };
 }
@@ -305,6 +467,7 @@ export function summarizeReadback(plan, payload) {
   if (plan.kind === "taskRun") return [...plan.fields, "Status", "Error"].map((name) => `${name}: ${field(result, name) || "none"}`).join(" · ");
   if (plan.kind === "arrayExact") return `${plan.field}: ${toList(field(result, plan.field)).join(", ") || "none"}`;
   if (plan.kind === "resourceSetExact") return `Resources: ${Array.isArray(field(result, plan.field)) ? field(result, plan.field).map((item) => `${field(item, "Name")}:${field(item, "Permissions")}`).join(", ") || "none" : "invalid"}`;
+  if (plan.kind === "webAppSnapshot") return `Enabled: ${String(field(result, "Enabled"))}; configuration readback compared`;
   return "Readback available";
 }
 
@@ -318,46 +481,61 @@ export function evaluateVerification(plan, payload, { status = 200 } = {}) {
   const result = unwrap(payload) || {};
   let verified = false;
   if (plan.kind === "processState") {
-    const actual = String(field(result, "State") || "").toUpperCase();
-    verified = plan.state === "suspended" ? actual.includes("SUSP") : Boolean(actual) && !actual.includes("SUSP");
+    const actual = String(field(result, "State") || "").trim().toUpperCase();
+    const baseState = actual.match(/^[A-Z]+/)?.[0] || "";
+    verified = plan.state === "suspended" ? baseState === "SUSP"
+      : ACTIVE_PROCESS_STATES.has(baseState) && !/\b(?:D|H)\b|DEAD|HALT/.test(actual);
   } else if (plan.kind === "boolean") {
     verified = field(result, plan.field) === plan.value;
   } else if (plan.kind === "taskRun") {
     const statusText = String(field(result, "Status") ?? "").trim();
     const errorText = String(field(result, "Error") ?? "").trim();
+    const finishedChanged = Boolean(field(result, "LastFinished"))
+      && String(field(result, "LastFinished")) !== String(plan.before?.LastFinished ?? "");
+    const startedChanged = Boolean(field(result, "LastStarted"))
+      && String(field(result, "LastStarted")) !== String(plan.before?.LastStarted ?? "");
+    if (!finishedChanged) {
+      return { status: "pending", summary: startedChanged
+        ? "Task started, but its new completion has not yet been observed"
+        : "A result from this task run has not yet been observed" };
+    }
     const failedStatus = /^-\d+$/.test(statusText) && statusText !== "-1";
     const failedMessage = Boolean(errorText) && !/^success$/i.test(errorText);
     if (failedStatus || failedMessage) {
       return { status: "error", summary: `Task reported failure: ${redactSensitiveText(errorText || `status ${statusText}`)}` };
     }
-    const finishedChanged = Boolean(field(result, "LastFinished"))
-      && String(field(result, "LastFinished")) !== String(plan.before?.LastFinished ?? "");
-    const startedChanged = Boolean(field(result, "LastStarted"))
-      && String(field(result, "LastStarted")) !== String(plan.before?.LastStarted ?? "");
-    if (statusText === "-1" || startedChanged) {
-      if (statusText !== "-1" && finishedChanged) return { status: "verified", summary: plan.description };
+    if (statusText === "-1") {
       return { status: "pending", summary: "Task started, but successful completion has not been observed" };
     }
-    if (finishedChanged) return { status: "verified", summary: plan.description };
+    if (/^[1-9]\d*$/.test(statusText)) return { status: "verified", summary: plan.description };
+    return { status: "pending", summary: "Task finished, but a successful status was not reported" };
   } else if (plan.kind === "arrayExact") {
     try {
       verified = JSON.stringify(sortedStrings(requireStringList(field(result, plan.field), plan.field))) === JSON.stringify(plan.expectedValues);
+      if (verified && plan.expectedSnapshot) verified = JSON.stringify(canonicalSnapshot("userSnapshot", payload)) === JSON.stringify(plan.expectedSnapshot);
     } catch { verified = false; }
   } else if (plan.kind === "resourceSetExact") {
     try {
       verified = JSON.stringify(sortedResources(requireResources(field(result, plan.field)))) === JSON.stringify(plan.expectedResources);
+      if (verified && plan.expectedSnapshot) verified = JSON.stringify(canonicalSnapshot("roleSnapshot", payload)) === JSON.stringify(plan.expectedSnapshot);
     } catch { verified = false; }
+  } else if (plan.kind === "webAppSnapshot") {
+    try { verified = (field(result, "Name") === undefined || field(result, "Name") === plan.name)
+      && JSON.stringify(canonicalWebApp(result)) === JSON.stringify(plan.expected); }
+    catch { verified = false; }
   }
   return {
     status: verified ? "verified" : "mismatch",
-    summary: verified ? plan.description : `Expected: ${plan.description}; observed: ${summarizeReadback(plan, payload)}`,
+    summary: verified ? plan.description : `Expected: ${plan.description}; complete documented record did not match. Observed: ${summarizeReadback(plan, payload)}`,
   };
 }
 
 function severityFrom(value) {
   const text = String(value || "").toLowerCase();
-  if (/critical|fatal|severe|error|failed|failure|denied|panic/.test(text)) return "critical";
-  if (/warn|suspend|timeout|degraded|alert/.test(text)) return "warning";
+  // Match whole status words, not substrings in names such as EnsAlert or
+  // "Purge errors and log files" (both normal installation events).
+  if (/\b(?:critical|fatal|severe|error|failed|failure|denied|panic)\b/.test(text)) return "critical";
+  if (/\b(?:warn(?:ing)?|suspend(?:ed)?|timeout|degraded|alert)\b/.test(text)) return "warning";
   return "info";
 }
 
@@ -373,10 +551,10 @@ export function normalizeAuditRecords(payload) {
       timeBasis: utcTime === undefined ? "IRIS server time" : "UTC",
       severity: severityFrom([field(row, "Status"), field(row, "EventType"), field(row, "Description")].join(" ")),
       source: "Audit",
-      subsystem: field(row, "EventSource") ?? field(row, "EventType") ?? "Security",
-      entity: field(row, "Namespace") || (field(row, "Pid") ? `PID ${field(row, "Pid")}` : "IRIS"),
-      actor: field(row, "Username") ?? "SYSTEM",
-      message: field(row, "Description") ?? field(row, "Event") ?? "Audit event",
+      subsystem: redactSensitiveText(field(row, "EventSource") ?? field(row, "EventType") ?? "Security"),
+      entity: redactSensitiveText(field(row, "Namespace") || (field(row, "Pid") ? `PID ${field(row, "Pid")}` : "IRIS")),
+      actor: redactSensitiveText(field(row, "Username") ?? "SYSTEM"),
+      message: redactSensitiveText(field(row, "Description") ?? field(row, "Event") ?? "Audit event"),
       correlation: `AUD-${field(row, "AuditIndex") ?? index}`,
     };
   });
@@ -386,16 +564,18 @@ export function normalizeTaskHistory(payload) {
   const rows = Array.isArray(unwrap(payload)) ? unwrap(payload) : [];
   return rows.map((row, index) => {
     const errorNumber = Number(field(row, "ErrNumber") || 0);
+    const time = field(row, "LogDatetime") ?? field(row, "Completed") ?? field(row, "LastStart") ?? "";
     return {
       id: `task-${field(row, "TaskId") ?? index}-${field(row, "LastStart") ?? ""}`,
-      time: field(row, "LogDatetime") ?? field(row, "Completed") ?? field(row, "LastStart") ?? "",
-      timeBasis: "IRIS server time",
+      time,
+      sortTime: sortableTime(time),
+      timeBasis: sortableTime(time) === null ? "IRIS server time · timezone unknown" : "Explicit timezone",
       severity: errorNumber ? "critical" : severityFrom([field(row, "Status"), field(row, "Result")].join(" ")),
       source: "Tasks",
       subsystem: "Task manager",
-      entity: `${field(row, "Name") || "Task"} #${field(row, "TaskId") ?? "?"}`,
-      actor: field(row, "Username") ?? "SYSTEM",
-      message: field(row, "Result") ?? field(row, "Status") ?? "Task execution",
+      entity: redactSensitiveText(`${field(row, "Name") || "Task"} #${field(row, "TaskId") ?? "?"}`),
+      actor: redactSensitiveText(field(row, "Username") ?? "SYSTEM"),
+      message: redactSensitiveText(field(row, "Result") ?? field(row, "Status") ?? "Task execution"),
       correlation: `TASK-${field(row, "TaskId") ?? index}`,
     };
   });
@@ -429,7 +609,9 @@ export function normalizeJournalEntries(entries = []) {
     id: entry.id,
     time: entry.time,
     timeBasis: "UTC",
-    severity: entry.resultStatus === "failed" ? "critical" : ["mismatch", "error", "pending", "unverified", "stale", "invalid"].includes(entry.verificationStatus) ? "warning" : "info",
+    severity: entry.resultStatus === "failed" ? "critical" : entry.resultStatus === "uncertain"
+      || ["mismatch", "error", "pending", "unverified", "stale", "invalid", "not-run", "connection-changed"].includes(entry.verificationStatus)
+      ? "warning" : "info",
     source: "Ops Studio",
     subsystem: `${["verified", "demo-verified"].includes(entry.verificationStatus) ? "Verified operation" : "Operation journal"} · ${entry.mode === "live" ? "Live" : "Demo"} · ${entry.instance}`,
     entity: entry.target,
@@ -451,12 +633,20 @@ export function normalizeUtcTimestamp(value) {
 }
 
 function sortableTime(value) {
-  const parsed = Date.parse(String(value || ""));
-  return Number.isNaN(parsed) ? 0 : parsed;
+  const text = String(value || "");
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) return null;
+  const parsed = Date.parse(text);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 export function mergeTimeline(...groups) {
-  return groups.flat().filter(Boolean).sort((left, right) => (right.sortTime ?? sortableTime(right.time)) - (left.sortTime ?? sortableTime(left.time)));
+  return groups.flat().filter(Boolean).sort((left, right) => {
+    const leftTime = left.sortTime ?? sortableTime(left.time);
+    const rightTime = right.sortTime ?? sortableTime(right.time);
+    if (leftTime === null) return rightTime === null ? 0 : 1;
+    if (rightTime === null) return -1;
+    return rightTime - leftTime;
+  });
 }
 
 export function filterTimeline(events, { source = "all", severity = "all", query = "" } = {}) {
