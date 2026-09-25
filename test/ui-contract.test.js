@@ -11,10 +11,14 @@ test("HTML exposes unique controls and safe dialog actions", async () => {
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0"/);
   assert.match(html, /class="ghost mobile-only" data-open-connection>Connection<\/button>/);
   assert.equal((html.match(/type="button" data-close-dialog=/g) || []).length, 4);
-  assert.equal((html.match(/type="submit"/g) || []).length, 2);
+  assert.equal((html.match(/type="submit"/g) || []).length, 3);
+  assert.match(html, /id="wallet-dialog"/);
+  assert.match(html, /id="wallet-edit-resource"/);
+  assert.match(html, /id="wallet-use-resource"/);
+  assert.doesNotMatch(html, /[^\x00-\x7F]/, "Static IRIS HTML must use character entities, independently of server charset");
   assert.match(html, /id="confirm-submit"[^>]+disabled/);
-  assert.match(html, /assets\/styles\.css\?v=1\.2\.0/);
-  assert.match(html, /assets\/app\.js\?v=1\.2\.0/);
+  assert.match(html, /assets\/styles\.css\?v=1\.2\.1/);
+  assert.match(html, /assets\/app\.js\?v=1\.2\.1/);
 });
 
 test("responsive CSS preserves mobile navigation, connection, and dialog access", async () => {
@@ -80,8 +84,8 @@ test("interaction bindings cover mobile connection and dialog cleanup", async ()
   assert.match(app, /appendQuery\("\/v2\/security\/user", \{ name: user\.name \}\)/);
   assert.match(app, /reconcileWebAppSummary/);
   assert.match(app, /appendQuery\("\/v2\/web-app", \{ name: webapp\.name \}\)/);
-  assert.match(app, /operations\.js\?v=1\.2\.0/);
-  assert.match(app, /rest-discovery\.js\?v=1\.2\.0/);
+  assert.match(app, /operations\.js\?v=1\.2\.1/);
+  assert.match(app, /rest-discovery\.js\?v=1\.2\.1/);
   assert.doesNotMatch(app, /dev-webapps/);
 });
 

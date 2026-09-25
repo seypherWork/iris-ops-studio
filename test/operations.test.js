@@ -92,6 +92,7 @@ test("guided web-app change blocks stale, incomplete, protected, or ambiguous st
   assert.throws(() => buildWebAppAvailabilityMutation({ ...detail, MatchRoles: [{ TargetRoles: ["[REDACTED]"] }] }, detail.Name, true), /redacted/);
   assert.equal(webAppGuidedEligibility("/api/admin", "IRISAPP").ok, false);
   assert.equal(webAppGuidedEligibility("/csp/ops", "IRISAPP").ok, false);
+  assert.equal(webAppGuidedEligibility("/api/irisops-logs", "IRISAPP", false).ok, false);
   assert.equal(webAppGuidedEligibility("/api/%61dmin", "IRISAPP").ok, false);
   assert.equal(webAppGuidedEligibility("/api/../admin", "IRISAPP").ok, false);
   assert.equal(webAppGuidedEligibility("/api/IrisOps_TestWeb", "%SYS").ok, false);

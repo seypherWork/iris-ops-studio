@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <title>IRIS Ops Studio</title>
-    <link rel="stylesheet" href="assets/styles.css?v=1.2.0" />
+    <link rel="stylesheet" href="assets/styles.css?v=1.2.1" />
   </head>
   <body>
     <div class="shell">
@@ -72,6 +72,8 @@
         </div>
         <label>Escalation role <span>(optional)</span><input id="role" name="role" autocomplete="off" /></label>
         <label class="toggle-row"><input id="demo-mode" type="checkbox" checked /><span>Use safe demo data</span></label>
+        <label class="toggle-row"><input id="native-logs-mode" type="checkbox" /><span>Connect native logs using this account</span></label>
+        <p class="dialog-copy">Native logs use a separate, read-only IRIS extension on this instance. Your account needs the IRIS operating permission and read access to the installation namespace. If the extension is unavailable, other workspaces still connect.</p>
         <div class="dialog-actions">
           <button class="ghost" type="button" data-close-dialog="connection-dialog">Cancel</button>
           <button class="primary" type="submit" id="connect-submit" value="default">Apply</button>
@@ -96,6 +98,17 @@
     </dialog>
 
     <div id="toast" class="toast" role="status"></div>
-    <script type="module" src="assets/app.js?v=1.2.0"></script>
+  <dialog id="wallet-dialog" aria-labelledby="wallet-title">
+    <form id="wallet-form">
+      <div class="dialog-head"><h2 id="wallet-title">Wallet access policy</h2><button type="button" class="icon-button" data-close-dialog="wallet-dialog" aria-label="Close wallet policy">&#215;</button></div>
+      <p class="dialog-copy" id="wallet-target"></p>
+      <p class="dialog-copy">Existing collection only. Changing these resources can remove or broaden access to every secret in the collection. Secret values are never loaded. Effective user access is not calculated.</p>
+      <label>Edit secrets &mdash; resource:permission<input id="wallet-edit-resource" required maxlength="64" autocomplete="off" spellcheck="false" placeholder="App_WalletEdit:WRITE" /></label>
+      <label>Use secrets &mdash; resource:permission<input id="wallet-use-resource" required maxlength="64" autocomplete="off" spellcheck="false" placeholder="App_WalletUse:READ" /></label>
+      <p class="dialog-copy">Use an existing IRIS resource and READ, WRITE or USE. IRIS enforces resource validity and your %Admin_Wallet permission. Empty or wildcard policies are declined.</p>
+      <div class="dialog-actions"><button type="button" class="ghost" data-close-dialog="wallet-dialog">Cancel</button><button type="submit" class="primary" id="wallet-preview">Preview policy change</button></div>
+    </form>
+  </dialog>
+  <script type="module" src="assets/app.js?v=1.2.1"></script>
   </body>
 </html>

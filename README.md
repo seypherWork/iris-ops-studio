@@ -4,6 +4,11 @@
 
 # IRIS Ops Studio
 
+> **Version 1.2.1.** Two focused additions—bounded native IRIS logs and guided
+> wallet access-policy changes—were tested on disposable IRIS Community 2026.2.
+> The [validation record](docs/development-validation-20260925.md) identifies
+> exactly what was exercised and what remains outside the tested scope.
+
 <p align="center">
   <strong>A safety-first operational console for the InterSystems IRIS SysAdmin API.</strong>
 </p>
@@ -11,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml"><img src="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml/badge.svg" alt="Verification status"></a>
   <img src="https://img.shields.io/badge/IRIS-2026.2-00a79d" alt="InterSystems IRIS 2026.2">
-  <img src="https://img.shields.io/badge/tests-84%20passing-26a269" alt="84 tests passing">
+  <img src="https://img.shields.io/badge/tests-103%20passing-26a269" alt="103 JavaScript tests passing locally">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
@@ -24,7 +29,8 @@ The project is an original entry for the **InterSystems Programming Contest:
 Build Your Own Management Portal**.
 
 Original challenge and requirements: [Contest 48](https://openexchange.intersystems.com/contest/48).
-Validation evidence: [final 1.2.0 remediation report](docs/final-remediation-validation-2026-09-24.md), [earlier 1.2.0 report](docs/web-app-development-validation.md)
+Validation evidence: [1.2.1 development report](docs/development-validation-20260925.md),
+[final 1.2.0 remediation report](docs/final-remediation-validation-2026-09-24.md),
 and [1.1.0 report](docs/validation-report.md).
 Release history: [changelog](CHANGELOG.md).
 Developer Community article: [IRIS Ops Studio: a safety-first operations console for InterSystems IRIS](https://community.intersystems.com/post/iris-ops-studio-safety-first-operations-console-intersystems-iris).
@@ -36,7 +42,27 @@ Technical article draft: [Beyond HTTP 200: verifiable administrative workflows](
 - [Guided Operations — One Change. Verified.](https://www.youtube.com/watch?v=ezfg4a-BCUk) — 1.1.0 preflight, target-bound confirmation, and readback in the labeled Safe demo.
 - [Incident Timeline — From Signal to Evidence](https://www.youtube.com/watch?v=CCJjEhDIXYQ) — 1.1.0 audit, task-history, and browser-session correlation in the labeled Safe demo.
 
-## What's new in 1.2.0
+## What's new in 1.2.1
+
+- **Bounded native IRIS logs.** An optional, independently authenticated,
+  read-only IRIS extension adds paged `messages.log`, `SystemMonitor.log`, and
+  `alerts.log` records to Incident Timeline. Each source reports missing or
+  partial data explicitly; requests accept no arbitrary filename. This is
+  not journal or interoperability-log support.
+- **Guided wallet access policy.** Existing non-system collections can change
+  only `EditResource` and `UseResource`: inspect both fields, preview impact
+  wording, require an exact target confirmation, re-read before `PUT`, and
+  verify both fields afterwards. Secret values are never requested. The
+  last-moment check is not an atomic concurrency lock or a complete user-impact
+  calculation.
+- **Measured validation.** This version passes 103 JavaScript tests and 20
+  native-reader tests on Linux. Both workflows were exercised in a development
+  and a separate fresh-install IRIS Community 2026.2 instance, including
+  restricted-account denial and a real stale wallet preview that sent no
+  `PUT`. The [validation record](docs/development-validation-20260925.md)
+  names the untested boundaries.
+
+## Earlier 1.2.0 improvements
 
 - **Guided web-app availability.** Eligible non-system applications can be
   enabled or disabled with a complete-configuration preview, a fresh check
@@ -57,20 +83,16 @@ Technical article draft: [Beyond HTTP 200: verifiable administrative workflows](
   IRIS; the container image and dependency-free Safe demo remain available.
   Versioned asset URLs avoid stale browser files after a fresh installation.
 
-The final source passes **84/84 automated tests**. Its measured aggregate line
-coverage is about **79.4% including the browser interaction module**, not a
-claim of complete behavior coverage. A fresh IRIS Community 2026.2 image
-passed installation, served-file hash and authorization-boundary checks. On
-that exact image, a disposable on-demand task was run and suspended through
-the UI; IRIS independently confirmed a new successful finish and the final
-suspended state. Other guided workflows were checked on separate disposable
-instances, with the scope recorded in the
-[final validation report](docs/final-remediation-validation-2026-09-24.md).
+The 1.2.0 release passed 84 JavaScript tests and the live checks detailed in
+its [final validation report](docs/final-remediation-validation-2026-09-24.md).
+The 1.2.1 test counts and evidence are separate; they do not
+retroactively change what was shipped in 1.2.0.
 
-Limits: the portal is a browser client, so its confirmations do not impose a
-server-enforced read-only mode; IRIS authorization remains the server-side
-boundary. An in-place upgrade was not tested. REST discovery needs separate
-Management API browser permission. Earlier release details are in the
+Limits: the guided-change confirmations are browser-side; the optional native
+log endpoint's read-only rule does **not** impose a server-enforced read-only
+mode on all SysAdmin mutations. IRIS authorization remains the boundary.
+An in-place upgrade was not tested. REST discovery needs separate Management
+API browser permission. Earlier release details are in the
 [changelog](CHANGELOG.md).
 
 ## Why it is useful
@@ -92,10 +114,12 @@ Key features:
   complete-configuration precondition and readback.
 - Read-only, independently authorized REST/OpenAPI catalog with an explicit
   unavailable state when the Management API is not accessible.
-- Wallet, X.509, and OAuth 2.0 security configuration views.
+- Wallet, X.509, and OAuth 2.0 security configuration views; guided access
+  policy editing for existing non-system wallet collections only.
 - Audit-event query view.
 - Incident Timeline combining audit records, task history, and the current
-  browser session's operation journal, with source, severity, and text filters.
+  browser session's operation journal; optionally, bounded pages from three
+  native IRIS log files, with source, severity, and text filters.
 - Built-in explorer for 34 IRIS SysAdmin API operations.
 - Native handling of IRIS response envelopes and asynchronous audit queries.
 - Preview → typed confirmation → execute → readback verification for supported
@@ -120,9 +144,12 @@ No IRIS instance or credentials are required for this route:
    `demo-verified` result inside Incident Timeline.
 4. Open **Access control**, assign a role or grant a resource, and inspect the
    schema-limited request preview before confirmation.
-5. Return to **Logs & audit** and filter Audit, Tasks, and Ops Studio events by
-   source, severity, text, entity, or correlation identifier.
-6. Open **Web apps** to inspect a protected management row, the eligible
+5. Return to **Logs & audit** and filter Audit, Tasks, Ops Studio, and labeled
+   native-log demo fixtures. The actual files require Live IRIS and the
+   optional read-only extension.
+6. Open **Secrets inventory** to inspect the wallet policy preview without
+   sending a live mutation; X.509 and OAuth remain metadata-only.
+7. Open **Web apps** to inspect a protected management row, the eligible
    `/api/app` demo fixture, and its target-bound availability preview. The
    separate REST catalog never invokes operations from a specification.
 
@@ -135,14 +162,32 @@ GET and HEAD requests cannot carry a JSON body.
 | --- | --- |
 | Safety is a workflow, not a warning banner | Preflight state, target-bound phrase, execution, readback, and journal entry |
 | Permission management is functional | User-role and role-resource mutation cards in Access control |
-| Logs cross subsystem boundaries | Audit + task history + session operations in Incident Timeline |
+| Logs cross subsystem boundaries | Audit + task history + session operations; optional bounded native messages, monitor, and alerts in Live IRIS |
+| Wallet access is controlled | Two-field preview, stale-state block before `PUT`, and two-field readback on disposable IRIS |
 | Known credential-shaped values are redacted | Recursive response, query-secret, audit-text, and task-text tests |
 | Review is reproducible | Safe demo, stateful mock API, zero runtime dependencies, and `npm run check` |
 
 ## Product tour
 
-All three images below were captured from the 1.1.0 **Safe demo**. They contain
-simulated data, not measurements or credentials from a live IRIS instance.
+The first two images show 1.2.1 workflows on a disposable **Live
+IRIS** instance. Their objects are test fixtures; the log view may include
+other local test-instance records. The three earlier images below are 1.1.0
+**Safe demo** screenshots and remain labeled as simulated.
+
+### Native IRIS logs
+
+Three independently paged sources join the Incident Timeline. The screenshot
+shows Audit as unavailable to the tested session, rather than silently
+counting it as healthy.
+
+![IRIS Ops Studio 1.2.1 native messages, System Monitor, and alerts on disposable live IRIS](docs/assets/ops-1.2.1-native-logs.png)
+
+### Wallet policy preview
+
+The preview shows the two policy fields on a disposable collection. It does
+not display secret values or assert which effective users will lose access.
+
+![IRIS Ops Studio 1.2.1 target-bound wallet access-policy preview on disposable live IRIS](docs/assets/ops-1.2.1-wallet-preview.png)
 
 ### Incident Timeline
 
@@ -226,6 +271,14 @@ Use **Connection settings**, disable demo mode, and point the client to the
 SysAdmin API, normally `/api/admin`. Authentication is performed against the
 official `/api/admin/login` operation.
 
+To read native messages, System Monitor, and alerts, opt into **Connect native
+logs using this account**. This separately authenticates the IRIS-hosted
+read-only `/api/irisops-logs` extension. The account needs `%Admin_Operate:U`
+and read access to the package namespace database. Without those privileges,
+the native sources report unavailable while the rest of the portal remains
+usable. The extension does not grant privileges or make SysAdmin writes
+read-only. See [native-log boundaries](docs/native-logs-development.md).
+
 > Configure the IRIS administrator credential according to the official
 > container documentation. The repository intentionally contains no password.
 > Do not expose a development instance to an untrusted network.
@@ -252,12 +305,14 @@ The UI adds defensive controls at the operator layer:
    `deactivate` are identified as destructive.
 4. Supported mutations first read the current object and show the expected
    post-operation state. Permission updates repeat that read immediately before
-   `PUT` and are blocked if the reviewed object changed meanwhile.
+   `PUT` and are blocked if the reviewed object changed meanwhile. The wallet
+   policy editor performs the same last-moment check for both reviewed fields.
 5. Every state-changing request requires an exact confirmation phrase. Built-in
    workflows bind that phrase to the selected process, task, user, or role.
-6. Supported process, task, and permission changes perform a second GET and are
-   marked verified only when the expected state is observed. Task execution
-   requires a new completion timestamp without a running or failure status.
+6. Guided process, task, permission, web-app availability, and wallet-policy
+   changes perform a second GET and are marked verified only when their
+   documented postconditions are observed. Task execution requires a new
+   completion timestamp without a running or failure status.
 7. Every mutation enters an in-memory session journal with its instance, mode,
    actor, execution result, and verification result. Stale permission previews
    are recorded as blocked; custom Explorer mutations with no safe readback
@@ -279,8 +334,9 @@ authorization. The browser remains a client, and IRIS privileges are the final
 enforcement boundary.
 
 The `/csp/ops/` application serves only static frontend assets and can therefore
-be loaded without an IRIS session. Operational data and actions remain protected
-by the separate `/api/admin` authentication and authorization layer.
+be loaded without an IRIS session. SysAdmin data and actions remain protected
+by `/api/admin`; the optional `/api/irisops-logs` endpoint has independent
+IRIS authentication, privilege checks, and a GET-only route.
 
 ## Supported workflows
 
@@ -292,9 +348,9 @@ by the separate `/api/admin` authentication and authorization layer.
 | Tasks | `/v2/tasks`, `/v2/task/info`, `/v2/task/history`, `/run`, `/suspend`, `/resume` | Inspect, operate, and verify scheduled work |
 | Access | `/v2/security/users`, `/user`, `/roles`, `/role`, `/resources` | Inventory and safely change user roles and role resources |
 | Web apps | `/v2/web-apps`, `/v2/web-app` | Inventory applications and guide eligible non-system availability changes |
-| Secrets | `/v2/wallet/collections`, `/v2/security/x509-credentials` | Metadata-only protected-asset inventory |
+| Secrets | `/v2/wallet/collections`, `GET, PUT /v2/wallet/collection`, `/v2/security/x509-credentials` | Protected-asset inventory; guided policy-only edit for an existing non-system wallet collection; X.509 remains metadata-only |
 | OAuth 2.0 | `/v2/security/oauth2/client/server-definitions`, `/resource-servers`, `/server/clients` | Inspect authorization servers, resources, clients, and redirect metadata |
-| Audit | `/v2/security/audit/records`, `/v2/task/history` | Normalize audit, task, and session-operation evidence into Incident Timeline |
+| Audit and logs | `/v2/security/audit/records`, `/v2/task/history`; optional `/api/irisops-logs/logs` | Normalize audit, task, session, and bounded native messages/monitor/alerts evidence into Incident Timeline |
 | Explorer | 34 catalogued endpoint/method pairs plus custom paths | Inspect requests, redacted responses, and verification status |
 
 The endpoint paths and methods are based on the official
@@ -315,6 +371,8 @@ test/api.test.js     Dependency-free Node test suite
 test/operations.test.js Permission, verification, journal, and timeline tests
 Installer.cls        IRIS namespace/database installer
 src/cls/IrisOps/     Package metadata class compiled by ZPM
+  LogApi.cls         Optional authenticated, read-only native-log route
+src/python/          Bounded native-file reader for the IRIS host
 module.xml           ZPM application manifest
 iris.script          Container installation script
 Dockerfile           IRIS Community container build
@@ -332,37 +390,43 @@ flowchart TD
     API --> IRIS[InterSystems IRIS 2026.2]
     API --> Verify[Readback verification]
     Verify --> Timeline[Session journal and Incident Timeline]
+    UI --> LogApi[Optional IRIS-hosted read-only log endpoint]
+    LogApi --> NativeLogs[Bounded native log pages]
+    NativeLogs --> Timeline
     Demo[Stateful safe-demo fixtures] --> UI
 ```
 
-The production application is a static browser client with no application
-server. The password field is transient and cleared after each attempt; the
-access and refresh tokens remain only in page memory until reload. In live
-mode, requests go directly from the browser to the selected IRIS SysAdmin API.
-In demo mode, representative fixtures make the complete interface reviewable
-without an IRIS instance.
+The core portal is a static browser client. The optional native-log reader is
+an IRIS-hosted REST extension, not a general mutation proxy. The password
+field is transient and cleared after each attempt; access and refresh tokens
+remain only in page memory until reload. In live mode, SysAdmin requests go
+directly from the browser to the selected IRIS API. In demo mode,
+representative fixtures make the interface reviewable without an IRIS instance.
 
 ## Validation status
 
-- **Automated:** seven JavaScript syntax checks and 84/84 tests passed,
-  including browser-coordination regressions. Aggregate line coverage in the
-  latest run was about 79.4%; a passing suite is not proof of zero defects.
-- **Exact final image:** fresh IRIS Community 2026.2 installation, matching
-  served-file hashes, unauthenticated API rejection, authenticated navigation,
-  and a disposable on-demand task Run/Suspend. IRIS independently showed a
-  new successful finish and the final suspended state.
-- **Other isolated IRIS checks:** guided Access and web-app changes, blocked
-  stale previews, and process controls were exercised on separate disposable
-  installations. Those results are not represented as tests of every endpoint
-  on the final image.
-- **Visual:** all ten areas were opened at measured 1440×900 and 390×844
-  viewports without page-level overflow; the mobile confirmation dialog and
-  Incident Timeline were inspected. No browser warning/error was observed in
-  that session.
+- **1.2.1 automated:** 103/103 JavaScript tests and syntax checks
+  pass locally. Node's measured aggregate line coverage is 81.17% and branch
+  coverage 71.03%; neither number establishes complete behavioral coverage.
+  The native reader passed 20/20 tests on Linux in both disposable IRIS
+  instances; Windows skipped 15 POSIX-only tests rather than counting them as
+  passes.
+- **1.2.1 real IRIS:** development and separate fresh-install
+  Community 2026.2 instances passed guided wallet cancel, stale-preview
+  rejection with no `PUT`, normal two-field readback, restricted-account
+  denial, native-log paging and credential-pattern redaction, and native-log
+  read/write permission boundaries. Test fixtures were removed or restored.
+- **Visual:** the new wallet and native-log workflows were inspected at
+  1440×900 and 390×844 on disposable IRIS, and a charset defect found only
+  in the real installation was corrected and rechecked.
+- **Release artifact:** the versioned source archive was hash-checked,
+  extracted, installed fresh and retested after fixing a durable-directory
+  path defect. No in-place upgrade or IRIS for Health test is claimed.
+  Earlier 1.2.0 validation remains in its own report.
 - **Reproduce:** `npm run check` runs syntax and test checks; `npm start`
   launches the dependency-free Safe demo. The
-  [final validation report](docs/final-remediation-validation-2026-09-24.md)
-  distinguishes automated, synthetic-browser and real-IRIS evidence. Earlier
+  [1.2.1 development report](docs/development-validation-20260925.md)
+  distinguishes automated, synthetic-browser, and real-IRIS evidence. Earlier
   release history remains in the [changelog](CHANGELOG.md).
 
 ## Scope and limits of the evidence
@@ -377,8 +441,14 @@ without an IRIS instance.
   server-side boundary; this release does not provide a server-enforced
   per-tab read-only mode.
 - Incident Timeline combines the IRIS audit API, task history, and this
-  browser session's operation journal. It does not ingest IRIS messages,
-  alerts, journal records, or interoperability logs.
+  browser session's operation journal. When explicitly enabled and authorized,
+  it also reads bounded `messages.log`, `SystemMonitor.log`, and `alerts.log`
+  pages. It does not decode journal records, interoperability logs, or
+  arbitrary custom log sources. Redaction of known credential patterns is not
+  a guarantee that arbitrary log prose is secret-free.
+- Wallet policy preconditions are not atomic compare-and-swap. A concurrent
+  administrator can change or delete a collection after the final GET and
+  before the PUT; the guided workflow cannot guarantee transaction isolation.
 - The guided preflight compares current and expected state for the selected
   target. It does not calculate a full downstream dependency graph or claim
   that every affected user or application has been identified.
@@ -407,7 +477,8 @@ without an IRIS instance.
 - [Submission draft](docs/submission.md)
 - [90-second demonstration script](docs/demo-script.md)
 - [API compatibility notes](docs/api-compatibility.md)
-- [1.2.0 validation report](docs/web-app-development-validation.md)
+- [1.2.1 validation](docs/development-validation-20260925.md)
+- [1.2.0 historical validation](docs/final-remediation-validation-2026-09-24.md)
 
 ## License
 

@@ -1,6 +1,6 @@
-import { redactSensitiveText } from "./sanitization.js?v=1.2.0";
+import { redactSensitiveText } from "./sanitization.js?v=1.2.1";
 
-export { redactSensitiveText } from "./sanitization.js?v=1.2.0";
+export { redactSensitiveText } from "./sanitization.js?v=1.2.1";
 
 export class IrisApiError extends Error {
   constructor(message, { status = 0, payload = null, path = "" } = {}) {

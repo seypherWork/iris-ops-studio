@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { IrisAdminClient } from "../web/assets/api.js?v=1.2.0";
+import { IrisAdminClient } from "../web/assets/api.js?v=1.2.1";
 import {
   catalogSelectionValue,
   explorerOutcomeLabel,

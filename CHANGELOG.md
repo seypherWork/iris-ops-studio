@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.2.1 — 2026-09-25
+
+- Optional, independently authenticated IRIS-native log reader for bounded
+  pages of `messages.log`, `SystemMonitor.log`, and `alerts.log`. The extension
+  has a fixed GET-only route, checks the connected account's operating
+  privilege and namespace read access, rejects arbitrary filenames, and
+  labels missing/partial sources. No journal or interoperability-body parser
+  is claimed.
+- Guided policy-only editing of existing non-system wallet collections:
+  `EditResource` and `UseResource` are previewed, re-read before `PUT`, and
+  both fields are checked on readback. Stale or incomplete state is blocked.
+  The precondition is not an atomic lock and the workflow does not read secret
+  values or calculate all downstream users.
+- JavaScript suite: 103/103 passing, with measured aggregate Node line
+  coverage 81.17% and branch coverage 71.03%. The POSIX native reader passed
+  20/20 Python tests on Linux in both disposable IRIS Community 2026.2
+  instances. Scoped real-browser, authorization, stale-preview, and visual
+  checks are recorded in `docs/development-validation-20260925.md`.
+- A fresh-install test from a versioned candidate exposed a durable-directory
+  path defect in the native-log reader. The path was corrected and the rebuilt
+  candidate passed real IRIS reads, permission boundaries, and desktop/mobile
+  browser flows. The final package was extracted, hash-checked and installed
+  on a disposable IRIS Community 2026.2 instance. This does not constitute an
+  in-place upgrade or a test of every IRIS deployment variant.
+
 ## 1.2.0 — 2026-09-24
 
 - Final remediation closes race conditions in access/web-app

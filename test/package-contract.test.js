@@ -13,10 +13,10 @@ test("ZPM resource directory matches the ObjectScript source layout", async () =
   const dockerfile = await readFile(new URL("Dockerfile", root), "utf8");
   assert.match(moduleXml, /<SourcesRoot>src<\/SourcesRoot>/);
   assert.match(moduleXml, /<Resource Directory="cls" Name="IrisOps\.PKG"\/>/);
-  assert.equal(packageJson.version, "1.2.0");
+  assert.equal(packageJson.version, "1.2.1");
   assert.equal(packageJson.engines.node, ">=22");
-  assert.match(moduleXml, /<Version>1\.2\.0<\/Version>/);
-  assert.match(aboutClass, /Quit "1\.2\.0"/);
+  assert.match(moduleXml, /<Version>1\.2\.1<\/Version>/);
+  assert.match(aboutClass, /Quit "1\.2\.1"/);
   assert.match(ciWorkflow, /node: \[22, 24\]/);
   assert.match(compose, /ISC_DATA_DIRECTORY:\s*\/durable\/iris/);
   assert.match(compose, /iris-data:\/durable/);
@@ -39,7 +39,8 @@ test("static CSP assets load without bypassing SysAdmin API authorization", asyn
   assert.match(moduleXml, /<FileCopy Name="\/web\/" Target="\$\{cspdir\}ops\/"\/>/);
   assert.doesNotMatch(moduleXml, /<CSPApplication|\{\$dbrole\}|\$\{dbrole\}/);
   const readme = await readFile(new URL("README.md", root), "utf8");
-  assert.match(readme, /Operational data and actions remain protected/);
+  assert.match(readme, /SysAdmin data and actions remain protected/);
+  assert.match(readme, /optional `\/api\/irisops-logs` endpoint has independent/);
 });
 
 test("IRIS terminal installer avoids compile-time macros", async () => {
@@ -47,4 +48,10 @@ test("IRIS terminal installer avoids compile-time macros", async () => {
   assert.doesNotMatch(script, /\$\$\$/);
   assert.match(script, /\$SYSTEM\.Status\.IsError\(sc\)/);
   assert.match(script, /zpm "load \/home\/irisowner\/irisbuild\//);
+});
+
+test("native log reader remains installed after durable manager migration", async () => {
+  const logApi = await readFile(new URL("src/cls/IrisOps/LogApi.cls", root), "utf8");
+  assert.match(logApi, /\$System\.Util\.ManagerDirectory\(\),\$System\.Util\.InstallDirectory\(\)/);
+  assert.match(logApi, /os\.path\.join\(install, "mgr", "irisops", "python", "irisops_logs\.py"\)/);
 });

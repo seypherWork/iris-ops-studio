@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { IrisAdminClient, unwrapIrisResult } from "../web/assets/api.js?v=1.2.0";
+import { IrisAdminClient, unwrapIrisResult } from "../web/assets/api.js?v=1.2.1";
 import { buildRoleResourceMutation, buildUserRoleMutation, buildWebAppAvailabilityMutation, captureVerificationBaseline, evaluatePrecondition, evaluateVerification, inferVerification } from "../web/assets/operations.js";
 import { loadRestCatalog, loadRestSpec, summarizeOpenApi } from "../web/assets/rest-discovery.js";
 

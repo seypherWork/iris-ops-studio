@@ -23,11 +23,19 @@ records the response and request details that the UI handles explicitly.
 | Web apps | `GET /v2/web-apps`, `GET, PUT /v2/web-app` | Maps authentication methods, dispatch class, namespace, and resource; reconciles enabled state with the authoritative detail endpoint; the guided availability workflow preserves documented configuration, blocks protected or stale targets, and checks complete post-write readback. An earlier 1.2.0 build passed a disposable live-IRIS round trip; the final remediation image has a fresh-install and read-only live-IRIS check, while its guided web-app mutation has not been repeated on that image. |
 | REST discovery | `GET /api/mgmnt/`, `GET /api/mgmnt/v2/`, `GET` of returned same-instance OpenAPI paths | Read-only browser-session catalog; no SysAdmin token is forwarded, cross-origin or unsafe specification paths are refused, and unavailable sources are shown honestly. The tested live session lacked the separate Management API browser permission, so a populated live catalog remains unverified. |
 | Protected assets | `GET /v2/wallet/collections`, `GET /v2/security/x509-credentials` | Displays metadata without rendering secret strings |
+| Wallet policy, 1.2.1 | `GET, PUT /v2/wallet/collection` | For an existing non-system collection only: validates and previews `EditResource` and `UseResource`, re-reads current metadata immediately before the documented PUT, blocks stale or incomplete state, and reads back both fields. It does not perform an atomic conditional write or read stored secret values. |
 | OAuth client servers | `GET /v2/security/oauth2/client/server-definitions` | Maps issuer endpoints and client/resource counts without requesting tokens |
 | OAuth resources | `GET /v2/security/oauth2/resource-servers` | Maps resource-server names to their server definitions |
 | OAuth server clients | `GET /v2/security/oauth2/server/clients` | Displays client identifiers and redirect metadata while redacting secret fields |
 | Audit | `POST /v2/security/audit/records` | Treats the query as read-only, follows its asynchronous status URL, and normalizes `UTCTimeStamp` as UTC |
 | Async jobs | `GET /v2/async-result` | Polls only on the accepted request's origin with a pinned connection context; connection changes cancel polling before stale results are returned |
+
+The optional 1.2.1 native-log route is **not** part of the SysAdmin API.
+`GET /api/irisops-logs/logs` is a separate IRIS-hosted REST extension with
+independent IRIS authentication, `%Admin_Operate:U` and package-namespace
+read checks, fixed source names, and bounded cursors. Non-GET methods are
+rejected. Its three supported sources are `messages.log`, `SystemMonitor.log`,
+and `alerts.log`; journal and interoperability records are not claimed.
 
 ## Verification outcomes
 
@@ -44,7 +52,7 @@ journal:
 - `demo-verified`: the same transition was reproduced against stateful demo
   fixtures rather than a live IRIS instance.
 
-A permission update may instead have execution result `blocked` with
+A permission or guided wallet-policy update may instead have execution result `blocked` with
 verification status `stale` or `invalid`. In that case the fresh precondition
 read no longer matches the reviewed object, or the latest response is unsafe to
 update, and no `PUT` is sent.

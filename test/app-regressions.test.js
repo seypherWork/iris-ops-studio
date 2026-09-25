@@ -40,10 +40,10 @@ async function loadApp() {
     setTimeout: (fn, ms) => { const timer = setTimeout(fn, ms); timer.unref(); return timer; }, clearTimeout,
   });
   const modules = new Map();
-  for (const name of ["api.js", "app.js", "explorer.js", "operations.js", "rest-discovery.js", "sanitization.js"]) {
+  for (const name of ["api.js", "app.js", "explorer.js", "operations.js", "rest-discovery.js", "sanitization.js", "native-logs.js", "wallet-policy.js"]) {
     const filename = path.join(assets, name);
     let source = await fs.readFile(filename, "utf8");
-    if (name === "app.js") source += "\nexport { state, prepareAccessOperation, prepareWebAppOperation, prepareOperation, runOperation, executeExplorerRequest, renderAccess, navigate };";
+    if (name === "app.js") source += "\nexport { state, prepareAccessOperation, prepareWebAppOperation, prepareOperation, runOperation, executeExplorerRequest, renderAccess, navigate, fetchNativeLogPage, openWalletPolicy, prepareWalletPolicy };";
     modules.set(filename, new vm.SourceTextModule(source, { context, identifier: filename }));
   }
   const app = modules.get(path.join(assets, "app.js"));
@@ -57,6 +57,95 @@ function live(app, base = "https://instance-a.invalid/api/admin") {
   app.state.client.setConnection({ baseUrl: base, token: "synthetic-test-token" });
   app.state.connectionContext = { mode: "live", instance: base, actor: "Test operator" };
 }
+
+test("an older native page cannot overwrite a newer page or a new connection", async () => {
+  const app = await loadApp(); live(app);
+  const gate = deferred();
+  let calls = 0;
+  app.state.nativeLogs = { page: () => ++calls === 1 ? gate.promise : Promise.resolve({ marker: "latest" }) };
+  const older = app.fetchNativeLogPage("messages");
+  await app.fetchNativeLogPage("messages");
+  gate.resolve({ marker: "older" });
+  await older;
+  assert.equal(app.state.nativeLogPages.messages.marker, "latest");
+  const late = deferred();
+  app.state.nativeLogs = { page: () => late.promise };
+  const reading = app.fetchNativeLogPage("messages");
+  app.state.connectionEpoch++;
+  app.state.nativeLogPages = {};
+  late.resolve({ marker: "old-instance" });
+  await reading;
+  assert.equal(Object.keys(app.state.nativeLogPages).length, 0);
+});
+
+async function walletPreview(app, fetchImpl) {
+  live(app);
+  app.state.view = "secrets";
+  app.state.client.fetchImpl = fetchImpl;
+  await app.openWalletPolicy("IrisOps_TestWallet");
+  app.node("#wallet-use-resource").value = "IrisOps_TestAlternate:R";
+  await app.prepareWalletPolicy();
+  return app.state.pendingOperation;
+}
+const walletBefore = () => ({ result: { EditResource: "IrisOps_TestEdit:W", UseResource: "IrisOps_TestUse:R" } });
+
+test("wallet stale, deleted or malformed preconditions never issue a PUT", async () => {
+  for (const next of [() => reply({ result: { ...walletBefore().result, UseResource: "Other:R" } }),
+    () => reply({}, 404), () => reply({ result: {} })]) {
+    const app = await loadApp();
+    const methods = [];
+    const operation = await walletPreview(app, async (_url, options) => {
+      methods.push(options.method);
+      return methods.length === 1 ? reply(walletBefore()) : next();
+    });
+    assert.equal(app.node("#confirm-dialog").open, true);
+    await assert.rejects(app.runOperation(operation));
+    assert.deepEqual(methods, ["GET", "GET"]);
+    assert.equal(app.state.operationJournal[0].resultStatus, "blocked");
+  }
+});
+
+test("wallet execution reads before PUT and verifies both fields afterwards", async () => {
+  const app = await loadApp();
+  let policy = walletBefore();
+  const methods = [];
+  const operation = await walletPreview(app, async (_url, options) => {
+    methods.push(options.method);
+    if (options.method === "PUT") policy = { result: JSON.parse(options.body) };
+    return reply(policy);
+  });
+  await app.runOperation(operation);
+  assert.deepEqual(methods, ["GET", "GET", "PUT", "GET"]);
+  assert.equal(app.state.operationJournal[0].verificationStatus, "verified");
+});
+
+test("wallet connection changes prevent late dialogs and stale execution", async () => {
+  const app = await loadApp(); live(app); app.state.view = "secrets";
+  const gate = deferred();
+  app.state.client.fetchImpl = () => gate.promise;
+  const opening = app.openWalletPolicy("IrisOps_TestWallet");
+  live(app, "https://instance-b.invalid/api/admin");
+  gate.resolve(reply(walletBefore()));
+  await assert.rejects(opening, /connection changed/);
+  assert.equal(app.node("#wallet-dialog").open, false);
+  const methods = [];
+  const operation = await walletPreview(app, async (_url, options) => {
+    methods.push(options.method); return reply(walletBefore());
+  });
+  live(app, "https://instance-b.invalid/api/admin");
+  await assert.rejects(app.runOperation(operation), /connection changed/);
+  assert.deepEqual(methods, ["GET"]);
+});
+
+test("canceling a wallet dialog discards its draft without a mutation", async () => {
+  const app = await loadApp(); live(app); app.state.view = "secrets";
+  const methods = [];
+  app.state.client.fetchImpl = async (_url, options) => { methods.push(options.method); return reply(walletBefore()); };
+  await app.openWalletPolicy("IrisOps_TestWallet");
+  app.node("#wallet-dialog").close();
+  await assert.rejects(app.prepareWalletPolicy(), /Open a collection/);
+  assert.deepEqual(methods, ["GET"]);
+});
 
 test("a task POST with audit text in the query still requires preview", async () => {
   const app = await loadApp();

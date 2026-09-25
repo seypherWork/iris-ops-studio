@@ -3,12 +3,14 @@
   <Document name="iris-ops-studio.ZPM">
     <Module>
       <Name>iris-ops-studio</Name>
-      <Version>1.2.0</Version>
+      <Version>1.2.1</Version>
       <Description>Safety-first management portal for InterSystems IRIS SysAdmin APIs</Description>
       <Keywords>IRIS,SysAdmin,operations,monitoring,security</Keywords>
       <Packaging>module</Packaging>
       <WebApplication AutheEnabled="64" AutoCompile="1" CookiePath="/csp/ops/" CSPZENEnabled="1" InbndWebServicesEnabled="1" LockCSPName="1" MatchRoles=":{$globalsDbRole}" Name="/csp/ops" NameSpace="{$namespace}" Path="${cspdir}ops/" Recurse="1" ServeFiles="1" ServeFilesTimeout="0" Timeout="900" UseCookies="2"/>
       <FileCopy Name="/web/" Target="${cspdir}ops/"/>
+      <FileCopy Name="/src/python/" Target="${mgrdir}irisops/python/"/>
+      <WebApplication Name="/api/irisops-logs" NameSpace="{$namespace}" DispatchClass="IrisOps.LogApi" AutheEnabled="32" JWTAuthEnabled="1" JWTAccessTokenTimeout="900" JWTRefreshTokenTimeout="3600" UseCookies="0"/>
       <SourcesRoot>src</SourcesRoot>
       <Resource Directory="cls" Name="IrisOps.PKG"/>
     </Module>

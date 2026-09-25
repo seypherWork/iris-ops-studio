@@ -8,7 +8,7 @@ import {
   redactSensitive,
   redactSensitiveText,
   unwrapIrisResult,
-} from "./api.js?v=1.2.0";
+} from "./api.js?v=1.2.1";
 import {
   buildRoleResourceMutation,
   buildUserRoleMutation,
@@ -33,15 +33,17 @@ import {
   summarizeReadback,
   verificationPollPolicy,
   webAppGuidedEligibility,
-} from "./operations.js?v=1.2.0";
-import { loadRestCatalog, loadRestSpec, managementOrigin, summarizeOpenApi } from "./rest-discovery.js?v=1.2.0";
+} from "./operations.js?v=1.2.1";
+import { loadRestCatalog, loadRestSpec, managementOrigin, summarizeOpenApi } from "./rest-discovery.js?v=1.2.1";
+import { NativeLogClient, NATIVE_SOURCES, nativeLogStatus, nativePageNotice, normalizeNativePage } from "./native-logs.js?v=1.2.1";
+import { walletEditable, walletSnapshot, buildWalletPolicyMutation } from "./wallet-policy.js?v=1.2.1";
 import {
   catalogSelectionValue,
   explorerOutcomeLabel,
   methodAcceptsBody,
   prepareExplorerRequest,
   verifiedJournalCount,
-} from "./explorer.js?v=1.2.0";
+} from "./explorer.js?v=1.2.1";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -117,6 +119,7 @@ const demo = {
     { name: "web-tls", type: "X509 credential", items: 1, state: "Valid", rotated: "41 days ago" },
     { name: "oauth-client", type: "OAuth configuration", items: 2, state: "Active", rotated: "7 days ago" },
   ],
+  walletPolicies: { "production-services": { EditResource: "IrisOps_TestEdit:WRITE", UseResource: "IrisOps_TestUse:READ" } },
   oauthServers: [
     { id: "auth0-prod", issuer: "https://identity.example/", clients: 2, resources: 1 },
   ],
@@ -156,6 +159,12 @@ const state = {
   operationJournal: [],
   timelineEvents: [],
   timelineFilters: { source: "all", severity: "all", query: "" },
+  nativeLogs: null,
+  nativeLogPages: {},
+  nativeLogErrors: {},
+  nativeLogRevision: 0,
+  nativeLogRequests: {},
+  nativeLogConnectionStatus: "Enable native logs in Connection settings",
   accessCatalog: null,
   restCatalog: [],
   restOrigin: null,
@@ -250,8 +259,8 @@ function sparkline(values) {
   return `<svg class="sparkline" viewBox="0 0 100 42" preserveAspectRatio="none" role="img" aria-label="Recent utilization trend"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#48e5c2" stop-opacity=".35"/><stop offset="1" stop-color="#48e5c2" stop-opacity="0"/></linearGradient></defs><polygon points="0,42 ${points} 100,42" fill="url(#area)"/><polyline points="${points}" fill="none" stroke="#48e5c2" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
-function shellCard(title, body, action = "") {
-  return `<article class="card"><header><div><p class="eyebrow">IRIS SysAdmin API</p><h2>${escapeHtml(title)}</h2></div>${action}</header>${body}</article>`;
+function shellCard(title, body, action = "", source = "IRIS SysAdmin API") {
+  return `<article class="card"><header><div><p class="eyebrow">${escapeHtml(source)}</p><h2>${escapeHtml(title)}</h2></div>${action}</header>${body}</article>`;
 }
 
 function unavailableSource(name) {
@@ -544,7 +553,9 @@ async function renderSecrets() {
     rows = [...walletRows, ...certificateRows];
   }
   const columns = state.demo ? [["name","Asset"],["type","Type"],["items","Items"],["state","State"],["rotated","Last rotation"]] : [["name","Asset"],["type","Type"],["state","State"],["details","Access / ownership"]];
-  return `${partialSourceNote(unavailable)}<div class="security-note"><span>\u25c8</span><div><strong>Inventory only</strong><p>This view requests and renders metadata. Fields matching password, token, private key, secret, or credential are redacted in the client before display.</p></div></div>${shellCard("Protected assets", unavailable.length === 2 ? unavailableSource("Protected assets") : table(rows, columns), '<button class="primary" data-open-explorer="/v2/wallet/secret|PUT">Manage secret</button>')}`;
+  const actions = (row) => row.type === "Wallet collection" && walletEditable(row.name)
+    ? `<button class="ghost" data-wallet-policy="${escapeHtml(row.name)}">Edit access policy</button>` : '<span class="pill">Inventory only</span>';
+  return `${partialSourceNote(unavailable)}<div class="security-note"><span>\u25c8</span><div><strong>Wallet access policy · secret values stay out of this workflow</strong><p>Edit or use permissions can be changed for existing non-system collections, with preview, a fresh precondition and readback of both fields. X.509 and OAuth remain metadata-only. No secret values are requested by this workflow.</p></div></div>${shellCard("Protected assets", unavailable.length === 2 ? unavailableSource("Protected assets") : table(rows, columns, { actions }))}`;
 }
 
 async function renderOAuth() {
@@ -590,7 +601,7 @@ function timelineTable(events) {
   if (!events.length) return '<div class="empty"><strong>No matching events</strong><span>Change the filters or refresh the source data.</span></div>';
   const rows = events.map((event) => `<tr>
     <td>${escapeHtml(formatTimelineTime(event.time))}${event.timeBasis ? `<small class="cell-detail">${escapeHtml(event.timeBasis)}</small>` : ""}</td>
-    <td><span class="pill ${event.severity === "critical" ? "danger" : event.severity === "warning" ? "warn" : "ok"}">${escapeHtml(event.severity)}</span></td>
+    <td><span class="pill ${event.severity === "critical" ? "danger" : event.severity === "warning" ? "warn" : event.severity === "unknown" ? "" : "ok"}">${event.severity === "unknown" ? "unclassified" : escapeHtml(event.severity)}</span></td>
     <td><strong>${escapeHtml(event.source)}</strong><small class="cell-detail">${escapeHtml(event.subsystem)}</small></td>
     <td>${escapeHtml(event.entity)}</td>
     <td>${escapeHtml(event.actor)}</td>
@@ -622,9 +633,70 @@ async function loadIncidentTimeline() {
       sources.push({ name: "Tasks", status: `${taskEvents.length} runs`, ok: true });
     } else sources.push({ name: "Tasks", status: "Unavailable in this session", ok: false });
   }
+  const nativeEvents = await loadNativeLogEvents(sources);
   const journalEvents = normalizeJournalEntries(state.operationJournal);
   sources.push({ name: "Ops Studio", status: `${journalEvents.length} session operations`, ok: true });
-  return { events: mergeTimeline(auditEvents, taskEvents, journalEvents), sources };
+  return { events: mergeTimeline(auditEvents, taskEvents, journalEvents, nativeEvents), sources };
+}
+
+function demoNativePage(source) {
+  return {
+    source, snapshot: "d".repeat(64), nextCursor: "", observedAt: "2026-09-24T12:00:00Z", partial: {},
+    records: [{ offset: 0, message: {
+      messages: "2026-09-24T11:58:00Z Demo fixture: warning — scheduled backup is taking longer than expected",
+      monitor: "2026-09-24T11:59:00Z Demo fixture: System Monitor sample completed",
+      alerts: "2026-09-24T12:00:00Z Demo fixture: alert — review available database space",
+    }[source] }],
+  };
+}
+
+async function fetchNativeLogPage(source, cursor = "") {
+  const client = state.nativeLogs;
+  const epoch = state.connectionEpoch;
+  const revision = state.nativeLogRevision;
+  if (!client || state.demo) return;
+  const request = (state.nativeLogRequests[source] || 0) + 1;
+  state.nativeLogRequests[source] = request;
+  try {
+    const page = await client.page(source, cursor);
+    if (client !== state.nativeLogs || epoch !== state.connectionEpoch || revision !== state.nativeLogRevision || request !== state.nativeLogRequests[source]) return;
+    state.nativeLogPages[source] = page;
+    delete state.nativeLogErrors[source];
+  } catch (error) {
+    if (client !== state.nativeLogs || epoch !== state.connectionEpoch || revision !== state.nativeLogRevision || request !== state.nativeLogRequests[source]) return;
+    delete state.nativeLogPages[source];
+    state.nativeLogErrors[source] = nativeLogStatus(error);
+  }
+}
+
+async function loadNativeLogEvents(sources) {
+  const demoMode = state.demo;
+  const epoch = state.connectionEpoch;
+  if (!demoMode && state.nativeLogs) {
+    await Promise.all(Object.keys(NATIVE_SOURCES).filter((source) => !state.nativeLogPages[source] && !state.nativeLogErrors[source])
+      .map((source) => fetchNativeLogPage(source)));
+  }
+  if (epoch !== state.connectionEpoch) return [];
+  const events = [];
+  for (const [source, name] of Object.entries(NATIVE_SOURCES)) {
+    const page = demoMode ? demoNativePage(source) : state.nativeLogPages[source];
+    sources.push({ name, ok: Boolean(page), status: demoMode ? "Demo fixture"
+      : page ? `${page.records.length} records · current page` : state.nativeLogErrors[source] || state.nativeLogConnectionStatus });
+    if (page) events.push(...normalizeNativePage(page));
+  }
+  return events;
+}
+
+function nativeLogControls() {
+  return `<div class="native-log-controls">${Object.entries(NATIVE_SOURCES).map(([source, name]) => {
+    const page = state.demo ? demoNativePage(source) : state.nativeLogPages[source];
+    const note = nativePageNotice(page);
+    return `<section class="native-log-source"><strong>${name}</strong><span>${state.demo ? "Demo fixture"
+      : page ? `${page.records.length} records loaded` : escapeHtml(state.nativeLogErrors[source] || state.nativeLogConnectionStatus)}</span>
+      <div><button class="ghost" data-native-latest="${source}"${state.demo || !state.nativeLogs ? " disabled" : ""}>Latest</button>
+      <button class="ghost" data-native-older="${source}"${state.demo || !page?.nextCursor ? " disabled" : ""}>Older records</button></div>
+      ${note ? `<small>${escapeHtml(note)}</small>` : ""}</section>`;
+  }).join("")}</div><p class="dialog-copy">Search filters the loaded pages only. Native timestamps without a timezone remain in server-local time and are not positioned as UTC. Standard IRIS severity codes are used when present; otherwise severity is inferred from text. Known credential patterns are redacted; free-text logs still require care before sharing.</p>`;
 }
 
 async function renderLogs() {
@@ -633,18 +705,19 @@ async function renderLogs() {
   if (revision === state.renderRevision && state.view === "logs") state.timelineEvents = events;
   const filters = state.timelineFilters;
   const filtered = filterTimeline(events, filters);
-  const warnings = events.filter((event) => event.severity !== "info").length;
+  const warnings = events.filter((event) => ["warning", "critical"].includes(event.severity)).length;
   const verified = verifiedJournalCount(state.operationJournal);
   const sourceBadges = sources.map((source) => `<span class="source-chip ${source.ok ? "" : "bad"}"><i></i><strong>${escapeHtml(source.name)}</strong>${escapeHtml(source.status)}</span>`).join("");
-  const sourceOptions = ["all", "Audit", "Tasks", "Ops Studio"].map((source) => `<option value="${source}"${filters.source === source ? " selected" : ""}>${source === "all" ? "All sources" : source}</option>`).join("");
-  const severityOptions = ["all", "info", "warning", "critical"].map((severity) => `<option value="${severity}"${filters.severity === severity ? " selected" : ""}>${severity === "all" ? "All severities" : severity}</option>`).join("");
+  const sourceOptions = ["all", "Audit", "Tasks", "Ops Studio", ...Object.values(NATIVE_SOURCES)].map((source) => `<option value="${source}"${filters.source === source ? " selected" : ""}>${source === "all" ? "All sources" : source}</option>`).join("");
+  const severityOptions = ["all", "info", "warning", "critical", "unknown"].map((severity) => `<option value="${severity}"${filters.severity === severity ? " selected" : ""}>${severity === "all" ? "All severities" : severity === "unknown" ? "Unclassified" : severity}</option>`).join("");
   return `<div class="metrics-grid compact">
       ${metric("Timeline events", events.length, "normalized records", "teal")}
       ${metric("Signals to review", warnings, "warning or critical", warnings ? "amber" : "")}
-      ${metric("Sources online", `${sources.filter((source) => source.ok).length}/${sources.length}`, "audit, tasks, session")}
+      ${metric("Sources online", `${sources.filter((source) => source.ok).length}/${sources.length}`, "native logs, audit, tasks, session")}
       ${metric("Verified changes", verified, "live + demo this session")}
     </div>
     <div class="source-health">${sourceBadges}</div>
+    ${shellCard("Native IRIS logs", nativeLogControls(), "", "Read-only IRIS extension")}
     ${shellCard("Incident Timeline", `<div class="timeline-controls"><label>Search<input id="timeline-query" type="search" value="${escapeHtml(filters.query)}" placeholder="Entity, actor, message, correlation\u2026" /></label><label>Source<select id="timeline-source">${sourceOptions}</select></label><label>Severity<select id="timeline-severity">${severityOptions}</select></label></div><div id="timeline-results">${timelineTable(filtered)}</div>`, '<button class="ghost" data-open-explorer="/v2/security/audit/records|POST">Advanced audit query</button>')}
     <div class="security-note"><span>\u2318</span><div><strong>Session Operation Journal</strong><p>Every state-changing request is recorded here with its execution result, readback status, instance, and actor. Known sensitive fields and credential-shaped values are redacted before entries are kept in memory.</p></div></div>`;
 }
@@ -677,6 +750,11 @@ function demoReadback(path) {
     const app = demo.webappDetails[name];
     if (!app) throw new IrisApiError("Demo web application not found", { status: 404, path });
     return { result: structuredClone(app) };
+  }
+  if (url.pathname === "/v2/wallet/collection") {
+    const policy = demo.walletPolicies[name];
+    if (!policy) throw new IrisApiError("Demo wallet collection not found", { status: 404, path });
+    return { result: structuredClone(policy) };
   }
   throw new IrisApiError("No demo readback is defined", { status: 404, path });
 }
@@ -781,6 +859,41 @@ async function prepareAccessOperation(action) {
       const row = demo.roles.find((item) => item.name === roleName);
       if (row) row.resources = change.body.Resources.length;
     },
+  });
+}
+
+async function openWalletPolicy(name) {
+  const origin = operationOrigin();
+  const path = appendQuery("/v2/wallet/collection", { name });
+  const beforePayload = await readback(path);
+  assertOperationContext({ ...origin, path });
+  assertPreparationCurrent(origin);
+  if (state.view !== "secrets") return;
+  const policy = walletSnapshot(beforePayload, name);
+  state.walletDraft = { ...origin, path, name, beforePayload };
+  $("#wallet-target").textContent = `${name} · ${origin.context.mode} · ${origin.context.instance}`;
+  $("#wallet-edit-resource").value = policy.EditResource;
+  $("#wallet-use-resource").value = policy.UseResource;
+  $("#wallet-dialog").showModal();
+}
+
+async function prepareWalletPolicy() {
+  const draft = state.walletDraft;
+  if (!draft) throw new TypeError("Open a collection policy first");
+  assertOperationContext(draft);
+  assertPreparationCurrent(draft);
+  const change = buildWalletPolicyMutation(draft.beforePayload, draft.name, $("#wallet-edit-resource").value, $("#wallet-use-resource").value);
+  if (!change.changed) throw new TypeError("Policy is unchanged");
+  $("#wallet-dialog").close();
+  await prepareOperation({
+    ...draft, method: "PUT", body: change.body, label: `Update wallet policy ${draft.name}`,
+    target: `Wallet collection ${draft.name}`, risk: "destructive",
+    confirmation: `UPDATE WALLET POLICY ${draft.name}`.toUpperCase(),
+    beforeSummary: change.beforeSummary,
+    expectedSummary: `${change.expectedSummary}. Accounts without these privileges may lose access; effective user access is not enumerated. %Admin_Wallet:U remains privileged.`,
+    precondition: { ...change.precondition, readPath: draft.path },
+    verification: { ...change.verification, readPath: draft.path },
+    demoApply: () => { demo.walletPolicies[draft.name] = structuredClone(change.body); },
   });
 }
 
@@ -917,7 +1030,25 @@ function bindDynamicControls() {
     finally { button.disabled = false; }
   }));
   bindRestSpecButtons();
-  if (state.view === "logs") bindTimelineFilters();
+  $$('[data-wallet-policy]').forEach((button) => button.addEventListener("click", async () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await openWalletPolicy(button.dataset.walletPolicy); }
+    catch (error) { toast(error.message, "error"); }
+    finally { button.disabled = false; }
+  }));
+  if (state.view === "logs") {
+    bindTimelineFilters();
+    $$('[data-native-latest], [data-native-older]').forEach((button) => button.addEventListener("click", async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      button.textContent = "Loading\u2026";
+      const source = button.dataset.nativeLatest || button.dataset.nativeOlder;
+      const cursor = button.dataset.nativeOlder ? state.nativeLogPages[source]?.nextCursor : "";
+      await fetchNativeLogPage(source, cursor);
+      if (state.view === "logs") await render();
+    }));
+  }
   if (state.view === "explorer") bindExplorer();
 }
 
@@ -1228,7 +1359,14 @@ window.addEventListener("hashchange", () => {
   const view = location.hash.slice(1);
   if (titles[view] && view !== state.view) navigate(view);
 });
-$("#refresh-button").addEventListener("click", render);
+$("#refresh-button").addEventListener("click", () => {
+  if (state.view === "logs") {
+    state.nativeLogRevision++;
+    state.nativeLogPages = {};
+    state.nativeLogErrors = {};
+  }
+  return render();
+});
 $("#journal-button").addEventListener("click", () => navigate("logs"));
 $("#connection-button").setAttribute("data-open-connection", "");
 $$('[data-open-connection]').forEach((button) => button.addEventListener("click", () => $("#connection-dialog").showModal()));
@@ -1238,6 +1376,12 @@ $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", (
   dialog?.close();
 }));
 let nextLoginAttempt = 0;
+$("#wallet-dialog").addEventListener("close", () => { if (!$("#wallet-dialog").open) state.walletDraft = null; });
+$("#wallet-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try { await prepareWalletPolicy(); }
+  catch (error) { toast(error.message, "error"); }
+});
 let pendingLoginAttempt = null;
 $("#connection-dialog").addEventListener("close", () => {
   if ($("#connection-dialog").open) return;
@@ -1265,14 +1409,38 @@ $("#connection-form").addEventListener("submit", async (event) => {
   const username = $("#username").value;
   const password = $("#password").value;
   const role = $("#role").value;
+  let nativeCandidate = null;
+  let nativeStatus = "Enable native logs in Connection settings";
   try {
     const candidate = new IrisAdminClient({ baseUrl, fetchImpl: state.client.fetchImpl, timeoutMs: state.client.timeoutMs });
     if (!useDemo) {
       if (!username || !password) throw new Error("Username and password are required for a live connection");
       await candidate.login(username, password, role);
+      if (pendingLoginAttempt !== attempt || !$("#connection-dialog").open) return;
+      if ($("#native-logs-mode").checked) {
+        try {
+          nativeCandidate = new NativeLogClient({ adminBase: baseUrl, pageUrl: location.href,
+            fetchImpl: state.client.fetchImpl, timeoutMs: state.client.timeoutMs });
+          await nativeCandidate.login(username, password, role);
+          nativeStatus = "Connected";
+        } catch (error) {
+          nativeCandidate?.close();
+          nativeCandidate = null;
+          nativeStatus = error instanceof TypeError ? error.message : nativeLogStatus(error);
+        }
+      }
     }
     if (pendingLoginAttempt !== attempt || !$("#connection-dialog").open) return;
     state.client = candidate;
+    state.walletDraft = null;
+    $("#wallet-dialog").close();
+    state.nativeLogs?.close();
+    state.nativeLogs = nativeCandidate;
+    nativeCandidate = null;
+    state.nativeLogConnectionStatus = nativeStatus;
+    state.nativeLogRevision++;
+    state.nativeLogPages = {};
+    state.nativeLogErrors = {};
     state.connectionEpoch++;
     state.demo = useDemo;
     state.connectionContext = useDemo
@@ -1288,6 +1456,7 @@ $("#connection-form").addEventListener("submit", async (event) => {
     if (pendingLoginAttempt === attempt) toast(error.message, "error");
   }
   finally {
+    nativeCandidate?.close();
     if (pendingLoginAttempt === attempt) {
       pendingLoginAttempt = null;
       $("#password").value = "";

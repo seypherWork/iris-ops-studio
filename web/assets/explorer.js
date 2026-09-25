@@ -1,4 +1,4 @@
-import { endpointCatalog, normalizeBaseUrl, resolveApiUrl } from "./api.js?v=1.2.0";
+import { endpointCatalog, normalizeBaseUrl, resolveApiUrl } from "./api.js?v=1.2.1";
 
 const NO_BODY_METHODS = new Set(["GET", "HEAD"]);
 

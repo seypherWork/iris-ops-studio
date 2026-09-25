@@ -15,7 +15,7 @@ import {
   resolveApiUrl,
   resolveServerLocation,
   unwrapIrisResult,
-} from "../web/assets/api.js?v=1.2.0";
+} from "../web/assets/api.js?v=1.2.1";
 
 test("catalog includes unique read workflows for infrastructure and OAuth", () => {
   const pairs = endpointCatalog.map(({ method, path }) => `${method} ${path}`);

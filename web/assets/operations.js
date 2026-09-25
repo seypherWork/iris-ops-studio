@@ -1,4 +1,5 @@
-import { redactSensitiveText } from "./sanitization.js?v=1.2.0";
+import { redactSensitiveText } from "./sanitization.js?v=1.2.1";
+import { walletSnapshot } from "./wallet-policy.js?v=1.2.1";
 
 const USER_MUTABLE_FIELDS = [
   "AccountNeverExpires",
@@ -231,7 +232,7 @@ export function webAppGuidedEligibility(name, namespace, isDefault) {
   }
   if (!ns || ns.toUpperCase() === "%SYS") return { ok: false, reason: "System or unknown namespace is inventory-only" };
   if (isDefault !== false) return { ok: false, reason: "Default or unknown namespace application is inventory-only" };
-  if (/^\/(?:api\/admin|api\/mgmnt|csp\/ops|csp\/sys)(?:\/|$)/i.test(appName)) {
+  if (/^\/(?:api\/admin|api\/mgmnt|api\/irisops-logs|csp\/ops|csp\/sys)(?:\/|$)/i.test(appName)) {
     return { ok: false, reason: "Management and Ops Studio applications are protected" };
   }
   return { ok: true, reason: "" };
@@ -304,7 +305,7 @@ export function sameOperationContext(expected, current) {
 }
 
 export function evaluatePrecondition(plan, payload) {
-  if (!plan || !new Set(["userSnapshot", "roleSnapshot", "webAppSnapshot", "processSnapshot"]).has(plan.kind)) {
+  if (!plan || !new Set(["userSnapshot", "roleSnapshot", "webAppSnapshot", "processSnapshot", "walletPolicy"]).has(plan.kind)) {
     return { ok: false, status: "invalid", summary: "No valid concurrency precondition is defined" };
   }
   try {
@@ -312,7 +313,8 @@ export function evaluatePrecondition(plan, payload) {
       && field(unwrap(payload), "Name") !== plan.name) {
       return { ok: false, status: "invalid", summary: "Latest readback is for a different application" };
     }
-    const actual = plan.kind === "webAppSnapshot" ? canonicalWebApp(payload)
+    const actual = plan.kind === "walletPolicy" ? walletSnapshot(payload, plan.name)
+      : plan.kind === "webAppSnapshot" ? canonicalWebApp(payload)
       : plan.kind === "processSnapshot" ? canonicalProcessSnapshot(payload, plan.id)
         : canonicalSnapshot(plan.kind, payload);
     const expected = plan.expected;
@@ -468,6 +470,7 @@ export function summarizeReadback(plan, payload) {
   if (plan.kind === "arrayExact") return `${plan.field}: ${toList(field(result, plan.field)).join(", ") || "none"}`;
   if (plan.kind === "resourceSetExact") return `Resources: ${Array.isArray(field(result, plan.field)) ? field(result, plan.field).map((item) => `${field(item, "Name")}:${field(item, "Permissions")}`).join(", ") || "none" : "invalid"}`;
   if (plan.kind === "webAppSnapshot") return `Enabled: ${String(field(result, "Enabled"))}; configuration readback compared`;
+  if (plan.kind === "walletPolicy") return "Both wallet access-policy fields compared";
   return "Readback available";
 }
 
@@ -519,6 +522,9 @@ export function evaluateVerification(plan, payload, { status = 200 } = {}) {
       verified = JSON.stringify(sortedResources(requireResources(field(result, plan.field)))) === JSON.stringify(plan.expectedResources);
       if (verified && plan.expectedSnapshot) verified = JSON.stringify(canonicalSnapshot("roleSnapshot", payload)) === JSON.stringify(plan.expectedSnapshot);
     } catch { verified = false; }
+  } else if (plan.kind === "walletPolicy") {
+    try { verified = JSON.stringify(walletSnapshot(payload, plan.name)) === JSON.stringify(plan.expected); }
+    catch { verified = false; }
   } else if (plan.kind === "webAppSnapshot") {
     try { verified = (field(result, "Name") === undefined || field(result, "Name") === plan.name)
       && JSON.stringify(canonicalWebApp(result)) === JSON.stringify(plan.expected); }

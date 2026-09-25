@@ -1,13 +1,14 @@
 {
   "name": "iris-ops-studio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "description": "A safety-first operations console for InterSystems IRIS SysAdmin APIs",
   "scripts": {
     "start": "node mock/server.mjs",
     "test": "node --experimental-vm-modules --test",
-    "check": "node --check web/assets/api.js && node --check web/assets/explorer.js && node --check web/assets/operations.js && node --check web/assets/rest-discovery.js && node --check web/assets/sanitization.js && node --check web/assets/app.js && node --check mock/server.mjs && node --experimental-vm-modules --test"
+    "check": "node --check web/assets/api.js && node --check web/assets/explorer.js && node --check web/assets/operations.js && node --check web/assets/rest-discovery.js && node --check web/assets/native-logs.js && node --check web/assets/wallet-policy.js && node --check web/assets/sanitization.js && node --check web/assets/app.js && node --check mock/server.mjs && node --experimental-vm-modules --test",
+    "test:logs": "python3 -B -m unittest discover -s test/python -v"
   },
   "engines": {
     "node": ">=22"
