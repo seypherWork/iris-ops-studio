@@ -156,6 +156,7 @@ const messages={
   deployment_unavailable:'The server deployment is suspended or unavailable. No fallback or retry was made.',
   deployment_busy:'A deployment transition or guarded operation is running. No automatic retry was made.',
   reconnect_required:'Guard authorization expired or disconnected. Reconnect; do not resend an uncertain change.',
+  renewal_required:'Native authorization expired. Renew the read-only session; any write approval must be reviewed again.',
   connection_or_response_lost:'Response unavailable. The change may have happened. Recover the existing receipt; never resend.',
   connection_changed:'Connection changed. The old result or approval was discarded.',
   guard_busy:'Another guard request is running. Wait for it to finish.',

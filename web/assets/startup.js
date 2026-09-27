@@ -37,5 +37,5 @@ export async function startApplication({document,load,setTimer=setTimeout,clearT
 }
 
 if(typeof document!=='undefined') {
-  void startApplication({document,load:()=>import('./app.js?v=1.2.1-startup1')});
+  void startApplication({document,load:()=>import('./app.js?v=1.3.1')});
 }
