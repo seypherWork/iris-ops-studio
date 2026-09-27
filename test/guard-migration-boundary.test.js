@@ -25,6 +25,18 @@ test('managed guard profile refuses direct administrative reads and writes',()=>
   assert.match(source,/No demo data or direct administrative API fallback is used/);
 });
 
+test('guard navigation does not advertise unsupported live workspaces',async()=>{
+  const css=await readFile(new URL('../web/assets/styles.css',import.meta.url),'utf8');
+  assert.match(source,/function configureGuardNavigation\(\)/);
+  assert.match(source,/const available = new Set\(\["logs", webGuardProfile \? "webapps" : "secrets"\]\)/);
+  assert.match(source,/button\.hidden = !available\.has\(button\.dataset\.view\)/);
+  assert.match(source,/label\.hidden = !hasAvailableItem/);
+  assert.match(source,/\.brand"\)\.setAttribute\("href", `#\$\{guardHome\}`\)/);
+  assert.match(source,/configureGuardNavigation\(\)/);
+  assert.match(css,/\.nav-item\[hidden\] \{ display: none; \}/);
+  assert.match(css,/\.nav-label\[hidden\] \{ display: none; \}/);
+});
+
 test('guided direct mutations remain explicitly outside the managed guard',()=>{
   assert.deepEqual(inventory.guardedWorkflows,['wallet.policy.update','webapp.availability.update','role.resource.grant','role.resource.revoke','user.membership.assign','user.membership.remove']);
   assert.ok(inventory.migrationNote.includes('generic SysAdmin PUT /v2/security/role remains unavailable'));
