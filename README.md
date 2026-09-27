@@ -33,8 +33,9 @@ hash, and repeat one reversible, owned-fixture workflow in Live IRIS. Look for
 the server's denial before write approval, the target-bound preview, a fresh
 precondition check, the native readback and an inspectable receipt. Never use
 real accounts, roles, applications or secrets as demonstration targets. The
-three linked videos below show earlier versions, not the optional managed
-guard. The [1.3.1 validation record](docs/session-hour-validation-20260927.md)
+first three linked videos below show earlier console versions. The two 1.3.1
+illustrated guides explain the evaluation route and bounded guard; they are not
+live test footage or substitutes for the written validation record. The [1.3.1 validation record](docs/session-hour-validation-20260927.md)
 distinguishes the observed one-hour browser expiry from the still-unrun
 scripted long-duration test.
 
@@ -87,8 +88,9 @@ not turn every existing workspace into a server-guarded workflow.
 The optional guard is a bounded evaluation package, **not production readiness, general active
 user management or an in-place upgrade**. Operator credentials, TLS trust and
 target enrollment are deliberate administrator steps. Earlier versions and
-historical validation numbers below remain explicitly versioned; the videos
-show earlier versions, not this guard.
+historical validation numbers below remain explicitly versioned; the first
+three videos show earlier console versions. The two 1.3.1 illustrated guides
+explain the guard without claiming live test footage.
 
 The 1.3.0 IPM module installed the direct console and log
 extension, **not the optional managed guard**. Use its separate, exact-hash
@@ -133,9 +135,15 @@ Technical article draft: [Beyond HTTP 200: verifiable administrative workflows](
 
 ## Video walkthroughs
 
+The first three introductions show earlier console versions. The two 1.3.1
+guides are illustrated explanations with synthetic narration, not live test
+footage or a substitute for the judge guide and validation record.
+
 - [Original overview](https://www.youtube.com/watch?v=Vxn_usXOEPU) — earlier interface and sanitized live-IRIS evidence.
 - [Guided Operations — One Change. Verified.](https://www.youtube.com/watch?v=ezfg4a-BCUk) — 1.1.0 preflight, target-bound confirmation, and readback in the labeled Safe demo.
 - [Incident Timeline — From Signal to Evidence](https://www.youtube.com/watch?v=CCJjEhDIXYQ) — 1.1.0 audit, task-history, and browser-session correlation in the labeled Safe demo.
+- [Install and Evaluate the Contest Entry](https://www.youtube.com/watch?v=_WqEtE3qdKo) — illustrated 1.3.1 route through Safe demo, disposable-IRIS direct console, and separate managed guard.
+- [How the Bounded Server Guard Verifies a Change](https://www.youtube.com/watch?v=6vBYXgL1SFU) — illustrated 1.3.1 explanation of read-only enforcement, approvals, stale-state blocking, native readback, and persistent receipts.
 
 ## What's new in 1.2.1
 
@@ -568,7 +576,7 @@ representative fixtures make the interface reviewable without an IRIS instance.
 
 ## Contest material
 
-- [Three video walkthroughs](#video-walkthroughs)
+- [Five video walkthroughs](#video-walkthroughs)
 - [Submission draft](docs/submission.md)
 - [90-second demonstration script](docs/demo-script.md)
 - [API compatibility notes](docs/api-compatibility.md)
