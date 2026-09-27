@@ -1,10 +1,20 @@
-# Judge's guide — managed guard review candidate
+# Judge's guide — IRIS Ops Studio 1.3.1 managed guard
 
-This is an **unpublished, local evaluation package**, based on Ops Studio 1.2.1.
-It is not an in-place upgrade or a production deployment recipe. The public
+This is the optional, exact-hash **1.3.1 review package**, not an in-place
+upgrade or a production deployment recipe. The public
 console and this managed profile are different entry points: only the workflows
 listed below go through this server guard. Other workspaces are disabled here,
 not silently routed to the unguarded administration API.
+
+The guarded URL is deliberately **not** the complete management portal. Its
+navigation shows only the enrolled Wallet, Web app, role/user and local session
+journal workflows. Overview, processes, tasks, storage, native logs, OAuth and
+the API explorer belong to the separate direct SysAdmin console; they are not
+connected through this guard. The full console is installed by the normal
+1.3.1 IPM/Docker package, not by this isolated review bundle. Do not describe
+its direct API operations as server-enforced read-only. The CPU/memory gauges
+are **demo data only**; live Overview shows IRIS performance and license metrics,
+not an actual host CPU percentage.
 
 ## What to evaluate
 
@@ -102,10 +112,15 @@ review Deployment.Plan again and return to READ_ONLY. Every result must indicate
 success before continuing. Enrollment does **not** edit assets or grant native
 permissions. If eligibility fails, do not loosen system permissions to bypass it.
 
-## 4. Five-minute review after provisioning
+## 4. Bounded review after provisioning
 
 1. Open the exact HTTPS URL printed by setup. Connect with the separate operator;
    do not choose **Use safe demo data**. Confirm the managed/live connection.
+   The 1.3.1 guard keeps the navigation session for at most one
+   hour. A native read-only authorization is renewed automatically only while
+   the tab is visible, no write/preview is active, and the session family is
+   still valid. Per-workflow write approval remains at most 60 seconds and
+   a preview remains at most 30 seconds. After one hour, reconnect manually.
 2. In READ_ONLY, inspect capabilities and enrolled targets. Write approval must
    be denied by the server, not just hidden by the interface.
 3. In the terminal, explicitly review a fresh Deployment.Plan and Apply ACTIVE.
@@ -152,8 +167,8 @@ If the engine is already stopped, do not restart it just to repeat this command.
   running native processes. Test new authentication separately.
 - Recovery proofs are sensitive. Losing one can prevent UI recovery; the tool
   does not bypass actor/proof checks to make a demonstration succeed.
-- The three published videos describe earlier versions, not proof of this
-  candidate. Evaluate the exact hashed package and current validation report.
+- The three historical walkthroughs describe earlier versions, not proof of
+  this package. Evaluate the exact hashed package and current validation report.
 
 Native reference: [InterSystems command-line security utilities](https://docs.intersystems.com/irislatest/csp/docbook/DocBook.UI.Page.cls?KEY=GSTU_seccli).
 Membership delta operations use the documented

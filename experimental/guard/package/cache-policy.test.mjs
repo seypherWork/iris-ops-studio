@@ -12,8 +12,8 @@ test('managed static assets refuse stale storage and date validators without bro
  assert.doesNotMatch(block,/Require all granted/);
  assert.match(config,/<Location \/>\s*Require all denied/);
 });
-test('changed startup stylesheet has its own cache identity, separate from pre-gate releases',async()=>{
+test('maintenance release stylesheet has its own cache identity',async()=>{
  const html=await readFile(new URL('../../../web/index.html',import.meta.url),'utf8');
- assert.match(html,/href="assets\/styles\.css\?v=1\.2\.1-startup1"/);
+ assert.match(html,/href="assets\/styles\.css\?v=1\.3\.1"/);
  assert.doesNotMatch(html,/href="assets\/styles\.css\?v=1\.2\.1"/);
 });
