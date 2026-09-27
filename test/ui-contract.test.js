@@ -4,12 +4,19 @@ import { readFile } from "node:fs/promises";
 
 const root = new URL("../web/", import.meta.url);
 
+test("dynamic Access Control binds both selectors without treating one node as a collection", async () => {
+  const source = await readFile(new URL("assets/app.js", root), "utf8");
+  assert.match(source, /\$\$\("\[data-guard-access\]"\)\.forEach/);
+  assert.doesNotMatch(source, /(?<!\$)\$\([^\n]+\)\.forEach/);
+  for (const control of ['guard-user-read', 'guard-user-remove']) assert.ok(source.includes(control));
+});
+
 test("HTML exposes unique controls and safe dialog actions", async () => {
   const html = await readFile(new URL("index.html", root), "utf8");
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, "Every element ID must be unique");
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0"/);
-  assert.match(html, /class="ghost mobile-only" data-open-connection>Connection<\/button>/);
+  assert.match(html, /class="ghost mobile-only" data-open-connection data-startup-control disabled>Connection<\/button>/);
   assert.equal((html.match(/type="button" data-close-dialog=/g) || []).length, 4);
   assert.equal((html.match(/type="submit"/g) || []).length, 3);
   assert.match(html, /id="wallet-dialog"/);
@@ -18,7 +25,9 @@ test("HTML exposes unique controls and safe dialog actions", async () => {
   assert.doesNotMatch(html, /[^\x00-\x7F]/, "Static IRIS HTML must use character entities, independently of server charset");
   assert.match(html, /id="confirm-submit"[^>]+disabled/);
   assert.match(html, /assets\/styles\.css\?v=1\.2\.1/);
-  assert.match(html, /assets\/app\.js\?v=1\.2\.1/);
+  assert.match(html, /assets\/startup\.js\?v=1\.2\.1-startup2/);
+  assert.match(html, /id="app-root" inert aria-busy="true"/);
+  assert.match(html, /id="mode-label">Not connected/);
 });
 
 test("responsive CSS preserves mobile navigation, connection, and dialog access", async () => {
