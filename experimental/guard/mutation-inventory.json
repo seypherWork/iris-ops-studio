@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "purpose": "Explicit migration boundary for the experimental managed guard; this is not a list of every possible Explorer request.",
+  "guardedWorkflows": [
+    "wallet.policy.update",
+    "webapp.availability.update",
+    "role.resource.grant",
+    "role.resource.revoke",
+    "user.membership.assign",
+    "user.membership.remove"
+  ],
+  "catalogueMutationsNotMigrated": [
+    "POST /v2/process/suspend",
+    "POST /v2/process/resume",
+    "POST /v2/process/terminate",
+    "POST /v2/task/run",
+    "POST /v2/task/suspend",
+    "POST /v2/task/resume",
+    "PUT /v2/security/user",
+    "PUT /v2/security/role",
+    "POST /v2/async-result/cancel"
+  ],
+  "readOnlyPost": [
+    "POST /v2/security/audit/records"
+  ],
+  "guidedMutationsNotMigrated": [
+    "PUT /v2/web-app"
+  ],
+  "arbitraryExplorerMutations": "blocked in the managed guard profile; not enumerable from the catalogue",
+  "migrationNote": "A narrow native role-resource workflow is guarded; the generic SysAdmin PUT /v2/security/role remains unavailable in the managed profile.",
+  "backendOnlyWorkflows": [],
+  "userWorkflowLimits": "Optional installed module and one enrolled disabled test account/role only. Authenticated HTTP and desktop/mobile UI verified in a new clean portable installation. Generic PUT /v2/security/user remains blocked; no production or arbitrary live-user support claimed.",
+  "nextMigrationCandidate": "No additional migration in this evaluation candidate; publication requires final approval",
+  "releaseStatus": "evaluation-candidate-unpublished"
+}
