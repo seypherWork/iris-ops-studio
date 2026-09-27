@@ -48,7 +48,7 @@ ClassMethod Session() As %Status
     if '$data(%session.Data("IrisOpsGuard","csrf")) {
         set %session.Data("IrisOpsGuard","csrf")=$system.Encryption.Base64Encode($system.Encryption.GenCryptRand(32),1)
     }
-    set value={"actor":($username),"mode":"read-only","experimental":true,"csrf":(%session.Data("IrisOpsGuard","csrf")),"sessionTimeoutSeconds":600}
+    set value={"actor":($username),"mode":"read-only","experimental":true,"csrf":(%session.Data("IrisOpsGuard","csrf")),"sessionTimeoutSeconds":3600}
     quit ..Reply(200,value)
 }
 

@@ -6,6 +6,7 @@ ClassMethod Run()
     new %session
     set %session=..%New(),%session.Key=$system.Encryption.GenCryptRand(32),%session.SessionId="synthetic-renewal-A"
     do ..Assert(##class(IrisOps.Guard.Vault).Lifetime()=300,"TLS policy selected")
+    do ..Assert(##class(IrisOps.Guard.Vault).FamilySeconds()=3600,"one-hour family policy selected")
     set token="SYNTHETIC-ACCESS-NONCREDENTIAL",refresh="SYNTHETIC-REFRESH-NONCREDENTIAL",seconds=59
     do ..Assert(##class(IrisOps.Guard.Vault).Seal(token,.seconds,0,refresh),"TLS access and refresh pair sealed")
     set id=%session.Data("IrisOpsGuard","auth","renewalId"),until=%session.Data("IrisOpsGuard","auth","renewUntil")
@@ -23,10 +24,18 @@ ClassMethod Run()
     do ..Assert('$data(%session.Data("IrisOpsGuard","auth","pendingRenewal")),"logout or failure clears pending renewal marker")
     set seconds=59,deadline=##class(IrisOps.Guard.Vault).Now()+10
     do ..Assert(##class(IrisOps.Guard.Vault).Seal(token,.seconds,0,refresh,deadline)&&(seconds'>10),"original family limit clamps new access lifetime")
-    set seconds=59,deadline=##class(IrisOps.Guard.Vault).Now()+301
+    set seconds=59,deadline=##class(IrisOps.Guard.Vault).Now()+3601
     do ..Assert('##class(IrisOps.Guard.Vault).Seal(token,.seconds,0,refresh,deadline),"family deadline beyond policy rejected")
     set seconds=59,deadline=##class(IrisOps.Guard.Vault).Now()-1
     do ..Assert('##class(IrisOps.Guard.Vault).Seal(token,.seconds,0,refresh,deadline),"expired family rejected")
+    set seconds=59
+    do ..Assert(##class(IrisOps.Guard.Vault).Seal(token,.seconds,0,refresh),"seal before native access expiry")
+    set id=%session.Data("IrisOpsGuard","auth","renewalId"),until=%session.Data("IrisOpsGuard","auth","renewUntil")
+    set boot=%session.Data("IrisOpsGuard","auth","boot"),iv=%session.Data("IrisOpsGuard","auth","iv"),key=$system.Encryption.SHAHash(256,%session.Key)
+    set expired={"actor":($username),"expires":(##class(IrisOps.Guard.Vault).Now()-1),"access":(token),"refresh":(refresh),"renewUntil":(until)}
+    set %session.Data("IrisOpsGuard","auth","cipher")=$system.Encryption.AESGCMEncrypt(expired.%ToJSON(),key,iv,##class(IrisOps.Guard.Vault).AAD(boot))
+    do ..Assert(##class(IrisOps.Guard.Vault).ConsumeRenewal(id,.r,.u)="","expired access may renew inside the original family")
+    do ..Assert((r=refresh)&&(u=until)&&'$data(%session.Data("IrisOpsGuard","auth","cipher")),"expired access renewal consumes old custody")
     do ##class(IrisOps.Guard.Vault).Clear()
     write "RENEWAL_CUSTODY_TESTS_COMPLETE",!
 }

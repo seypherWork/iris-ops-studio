@@ -121,7 +121,7 @@ ClassMethod Renew() As %Status
         set seconds=upstream.remainingSeconds
         if seconds>300 set seconds=300
         if '##class(IrisOps.Guard.Vault).Seal(upstream.access,.seconds,upstream.expiresAt,upstream.refresh,until) { set sc=..Reply(401,{"error":"renewal_failed_reconnect_required"}) quit }
-        set result={"connected":true,"actor":($username),"mode":"read-only","authorizationSeconds":(seconds),"idleSeconds":($select(seconds<120:seconds,1:120)),"renewalId":($get(%session.Data("IrisOpsGuard","auth","renewalId"))),"renewalSeconds":(until-##class(IrisOps.Guard.Vault).Now())}
+        set result={"connected":true,"actor":($username),"mode":"read-only","authorizationSeconds":(seconds),"idleSeconds":($get(%session.Data("IrisOpsGuard","auth","idleUntil"))-##class(IrisOps.Guard.Vault).Now()),"renewalId":($get(%session.Data("IrisOpsGuard","auth","renewalId"))),"renewalSeconds":(until-##class(IrisOps.Guard.Vault).Now())}
         set sc=..Reply(200,result)
     } catch e {
         do ##class(IrisOps.Guard.Vault).Clear()
