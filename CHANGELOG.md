@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.1 — 2026-09-27
+
+- The optional HTTPS managed guard keeps a navigation session for at most one
+  hour, with automatic read-only authorization renewal while the tab is visible
+  and no write or preview is active. It does not extend the original one-hour
+  family or retry an uncertain change.
+- Per-workflow write approval remains at most 60 seconds; previews remain at
+  most 30 seconds. Unsupported workspaces are hidden from guard navigation
+  instead of inviting the reviewer into disconnected panels.
+- The English README and judge guide now separate the full direct console,
+  Safe demo and optional guard, with an owned-fixture evaluation route.
+- Local verification: 270/270 JavaScript tests and 18 native renewal checks.
+  A real browser session reached the one-hour expiry and required reconnection;
+  the separate scripted long-duration test remains unrun.
+- This is a separate maintenance release; the public 1.3.0 ZIP and SHA-256 are
+  not changed by it.
+
 ## 1.3.0 — 2026-09-27
 
 - Optional IRIS-native managed endpoint with deployment READ_ONLY/SUSPENDED
