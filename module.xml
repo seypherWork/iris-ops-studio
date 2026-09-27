@@ -3,7 +3,7 @@
   <Document name="iris-ops-studio.ZPM">
     <Module>
       <Name>iris-ops-studio</Name>
-      <Version>1.2.1</Version>
+      <Version>1.3.0</Version>
       <Description>Safety-first management portal for InterSystems IRIS SysAdmin APIs</Description>
       <Keywords>IRIS,SysAdmin,operations,monitoring,security</Keywords>
       <Packaging>module</Packaging>

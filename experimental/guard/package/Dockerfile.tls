@@ -1,0 +1,15 @@
+# Isolated LAB profile; bundled private web server is not a production gateway.
+FROM intersystemsdc/iris-community:2026.2-zpm
+USER root
+RUN mkdir -p /durable && chown 51773:51773 /durable
+COPY --chown=51773:51773 classes/ /opt/irisops-guard/classes/
+COPY --chown=51773:51773 bootstrap/ /opt/irisops-guard/bootstrap/
+COPY --chown=51773:51773 ui/ /opt/irisops-guard/ui/
+COPY manifest.json /opt/irisops-guard/manifest.json
+COPY tls/ /opt/irisops-guard/tls/
+COPY tls/httpd-local.conf /usr/irissys/httpd/conf/httpd-local.conf
+USER irisowner
+WORKDIR /home/irisowner
+RUN touch iris-main.log
+ENTRYPOINT ["/tini","--","/iris-main"]
+CMD ["--ISCAgent","false"]

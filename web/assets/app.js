@@ -47,6 +47,29 @@ import {
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+// Immutable, opt-in LAB profile. Removing the query cannot disable the profile
+// at its dedicated deployment path. Failure to load the adapter never falls back.
+const managedGuardProfile = new URL(location.href).pathname.includes("/guard-managed/web/")
+  || new URL(location.href).searchParams.get("guard") === "managed-lab";
+const combinedGuardProfile = managedGuardProfile || new URL(location.href).pathname.includes("/guard-combined/web/")
+  || new URL(location.href).searchParams.get("guard") === "combined-lab";
+let webGuardProfile = new URL(location.href).pathname.includes("/guard-webapp/web/")
+  || new URL(location.href).searchParams.get("guard") === "webapp-lab";
+let roleGuardProfile = false;
+let userGuardProfile = false;
+const guardProfile = combinedGuardProfile || webGuardProfile || new URL(location.href).pathname.includes("/guard-integrated/web/")
+  || new URL(location.href).searchParams.get("guard") === "wallet-lab";
+let walletGuard = null, guardMessage = () => "Guard unavailable. No direct IRIS fallback.", guardLoadError = "";
+if (guardProfile) {
+  document.documentElement.classList.add("guard-profile");
+  try {
+    const integration = await import("./wallet-guard.js");
+    guardMessage = integration.guardMessage;
+    const Controller=combinedGuardProfile?(await import("./combined-guard.js")).CombinedGuard:integration.WalletGuard;
+    walletGuard = new Controller({ origin: new URL(location.href).origin,kind:webGuardProfile?"webapp":"wallet",profile:managedGuardProfile?"managed":"combined",
+      storage: { getItem: (k) => sessionStorage.getItem(k), setItem: (k,v) => sessionStorage.setItem(k,v), removeItem: (k) => sessionStorage.removeItem(k) } });
+  } catch { throw new Error("Guard initialization failed; no direct API fallback"); }
+}
 
 const demo = {
   info: { server: "iris-ops-demo", version: "IRIS 2026.2", namespace: "%SYS", user: "ops-admin", api: "SysAdmin v2" },
@@ -148,14 +171,20 @@ const demo = {
 
 const state = {
   view: "overview",
-  demo: true,
+  demo: !guardProfile,
   busy: false,
   renderRevision: 0,
   explorerRequestRevision: 0,
   operationPreparationRevision: 0,
   connectionEpoch: 0,
-  client: new IrisAdminClient(),
+  client: guardProfile ? Object.freeze({
+    baseUrl:"/api/irisops-http-guard",connectionRevision:0,successfulRequests:0,
+    request:async()=>{throw new IrisApiError("Direct administrative API disabled in wallet guard profile",{status:403});},
+    requestAsync:async()=>{throw new IrisApiError("Direct administrative API disabled in wallet guard profile",{status:403});},
+  }) : new IrisAdminClient(),
   pendingOperation: null,
+  guardRoleResource: "",
+  guardAccessKind: "role",
   operationJournal: [],
   timelineEvents: [],
   timelineFilters: { source: "all", severity: "all", query: "" },
@@ -541,6 +570,7 @@ async function renderWebapps() {
 }
 
 async function renderSecrets() {
+  if (guardProfile) return renderGuardWallet();
   let rows = demo.secrets;
   let unavailable = [];
   if (!state.demo) {
@@ -556,6 +586,176 @@ async function renderSecrets() {
   const actions = (row) => row.type === "Wallet collection" && walletEditable(row.name)
     ? `<button class="ghost" data-wallet-policy="${escapeHtml(row.name)}">Edit access policy</button>` : '<span class="pill">Inventory only</span>';
   return `${partialSourceNote(unavailable)}<div class="security-note"><span>\u25c8</span><div><strong>Wallet access policy · secret values stay out of this workflow</strong><p>Edit or use permissions can be changed for existing non-system collections, with preview, a fresh precondition and readback of both fields. X.509 and OAuth remain metadata-only. No secret values are requested by this workflow.</p></div></div>${shellCard("Protected assets", unavailable.length === 2 ? unavailableSource("Protected assets") : table(rows, columns, { actions }))}`;
+}
+
+function guardReceiptMarkup() {
+  const {receipt,observation}=walletGuard?.result||{};
+  if(!receipt)return '<p class="workflow-help">No receipt loaded. An interrupted change must be inspected, never resent.</p>';
+  return `<div class="preview-grid"><div><small>Original execution</small><b id="guard-original">${escapeHtml(receipt.state)}</b></div><div><small>Current observation</small><b id="guard-observation">${escapeHtml(observation?.outcome||"Not checked")}</b></div></div>
+    <p class="workflow-help">A current match does not prove who caused it. Recovery never replaces original evidence or sends an administrative change.</p>
+    <pre id="guard-receipt-detail" class="guard-receipt">${escapeHtml(JSON.stringify(receipt,null,2))}</pre>`;
+}
+
+function renderGuardWallet(currentWebState=null) {
+  if(!walletGuard)return unavailableSource(guardLoadError||"Server guard");
+  const status=walletGuard.status;
+  const scope=managedGuardProfile?"enrolled targets; separately authorized":combinedGuardProfile?"wallet + web-app availability, separately authorized":webGuardProfile?"web-app availability only":"wallet only";
+  const target=walletGuard.target||'';
+  return `<div class="security-note"><span>◈</span><div><strong>Experimental server guard · ${scope}</strong><p>Only the server-enrolled target is eligible: ${escapeHtml(target||'connect to check target policy')}. Other workspaces have not been migrated. No direct /api/admin fallback or browser administrative token.</p></div></div>
+    ${managedGuardProfile&&state.view==='access'?`<div class="workflow-actions" aria-label="Access Control views"><button class="ghost" data-guard-access="role" aria-pressed="${roleGuardProfile}">Role resources</button><button class="ghost" data-guard-access="user" aria-pressed="${userGuardProfile}" ${walletGuard.capabilities?.user?.target?'':'disabled'}>User membership</button></div>${walletGuard.capabilities?.user?.target?'':'<p class="workflow-help">User membership requires an installed module and an explicitly enrolled disabled test account.</p>'}`:''}
+    ${shellCard(userGuardProfile?"Server-controlled user membership":roleGuardProfile?"Server-controlled role grant":webGuardProfile?"Server-controlled Web app":"Server-controlled wallet",`<div class="workflow-form">
+      <strong id="guard-mode">${status.connected?"Read-only":"Disconnected"}</strong><p id="guard-actor" class="workflow-help">${escapeHtml(status.actor||"Connect using Connection settings.")}</p>
+      <div class="workflow-actions"><button class="primary" id="guard-enable" disabled>Enable writes for 60s</button><button class="ghost" id="guard-disable" disabled>Return to read-only</button>${managedGuardProfile&&location.protocol==='https:'?'<button class="ghost" id="guard-renew" disabled>Renew session · read-only</button>':''}<button class="ghost" id="guard-disconnect" disabled>Disconnect &amp; forget keys</button></div>
+      <p class="workflow-help">A new connection starts read-only. ${managedGuardProfile&&location.protocol==='https:'?'Native authorization typically expires after about 60 seconds. Renew explicitly before expiry: this cancels approvals in every guarded workspace and returns to read-only. The total session remains capped at 5 minutes from login and 2 minutes of API inactivity, subject to native expiry. No automatic renewal; a lost renewal response requires reconnecting.':'Authorization lasts at most 60 seconds in this pilot, subject to native IRIS expiry.'} Reconnecting in a shared browser session may invalidate another tab’s approval.${combinedGuardProfile?' One login serves the guarded workspaces; write access and recovery keys stay separate.':''}</p>
+      ${combinedGuardProfile?`<p id="guard-capability" class="workflow-help">${status.connected?(status.capability?'Native permission available; every operation is rechecked.':'Unavailable: required native permission is missing. Reconnect after permission changes.'):'Connect to check native permissions.'}</p>`:''}
+      ${managedGuardProfile?'<p id="guard-deployment" class="workflow-help">Checking server deployment state.</p>':''}
+      ${userGuardProfile?`<p class="workflow-help">Only this enrolled disabled test account and role are eligible. This does not enable the account, edit passwords or calculate effective access.</p>
+        <p>User: <strong id="guard-user-target">${escapeHtml(target)}</strong><br>Role: <strong id="guard-user-role">${escapeHtml(walletGuard.enrolledRole)}</strong></p>
+        <p id="guard-user-current" class="workflow-help">Read the current direct membership.</p>
+        <div class="workflow-actions"><button class="ghost" id="guard-user-read" disabled>Read membership</button><button class="ghost" id="guard-edit" disabled>Preview assignment</button><button class="ghost" id="guard-user-remove" disabled>Preview removal</button></div>`:
+        roleGuardProfile?`<p class="workflow-help">Only this enrolled test role and these resources are available. Affected users are not enumerated.</p>
+        <label>Resource<select id="guard-role-resource">${walletGuard.resources.map(resource=>`<option value="${escapeHtml(resource)}"${state.guardRoleResource===resource?' selected':''}>${escapeHtml(resource)}</option>`).join('')}</select></label>
+        <p id="guard-role-current" class="workflow-help">Select a resource and read its current grant.</p>
+        <label>Permission<select id="guard-role-permission"><option value="R">Read</option><option value="RW">Read + write</option><option value="RWU">Read + write + use</option><option value="U">Use</option></select></label>
+        <div class="workflow-actions"><button class="ghost" id="guard-role-read" disabled>Read grant</button><button class="ghost" id="guard-edit" disabled>Preview grant</button><button class="ghost" id="guard-role-revoke" disabled>Preview revoke</button></div>`:
+        webGuardProfile?`<p id="guard-web-current">Application: ${escapeHtml(target||'not configured')} · ${currentWebState?(currentWebState.Enabled?"Enabled":"Disabled"):"Not read"}</p><button class="ghost" id="guard-edit" disabled>Preview availability change</button>`:`<button class="ghost" id="guard-edit" data-wallet-policy="${escapeHtml(target)}" disabled>Edit access policy</button>`}</div>`)}
+    ${shellCard("Recover an operation",`<div class="workflow-form"><label>Operation ID<input id="guard-operation-id" maxlength="32" autocomplete="off" value="${escapeHtml(status.lastId)}"></label>
+      <p class="workflow-help">Private recovery keys remain in this tab across reload/reconnect (up to 64). Disconnect forgets them; lost keys cannot be reissued. Your native login and current permissions are also required.</p>
+      <div class="workflow-actions"><button class="ghost" id="guard-inspect" disabled>Inspect receipt</button><button class="primary" id="guard-reconcile" disabled>Record read-only check</button></div>
+      <div id="guard-result">${guardReceiptMarkup()}</div></div>`)}`;
+}
+async function renderGuardWebapp(){
+  let current=null;
+  let warning="";
+  if(walletGuard?.status.connected&&(!combinedGuardProfile||walletGuard.status.capability))try{current=await walletGuard.webapp();}catch(error){warning=guardMessage(error);}
+  return (warning?`<p id="guard-web-read-warning" class="workflow-help">${escapeHtml(warning)}</p>`:"")+renderGuardWallet(current);
+}
+function renderGuardRole(){return renderGuardWallet();}
+async function selectGuardAccess(kind){
+  if(!['role','user'].includes(kind))return;
+  clearGuardDialogs();await walletGuard.select(kind);
+  state.guardAccessKind=kind;roleGuardProfile=kind==='role';userGuardProfile=kind==='user';
+  await render();
+}
+async function readGuardUser(){
+  const revision=state.renderRevision,current=await walletGuard.user();
+  if(revision===state.renderRevision&&userGuardProfile&&$("#guard-user-current"))
+    $("#guard-user-current").textContent=`${current.assigned?'Assigned':'Not assigned'} · direct membership checked · account remains disabled`;
+}
+async function prepareGuardUser(action){
+  const revision=state.renderRevision,epoch=state.connectionEpoch;
+  const preview=await walletGuard.previewUser(action);
+  if(!userGuardProfile||state.view!=="access"||revision!==state.renderRevision||epoch!==state.connectionEpoch){await walletGuard.cancel();return;}
+  state.pendingOperation={...operationOrigin(),guardId:preview.id,confirmation:preview.confirmation,
+    method:"POST",path:"/v1/user/previews/"+preview.id+"/execute",label:"Server-guarded user membership "+action,target:preview.target};
+  $("#confirm-title").textContent="Server-owned user membership preview";
+  $("#confirm-description").innerHTML=`<strong>${escapeHtml(preview.target)} · ${escapeHtml(preview.expected.role)}</strong><div class="preview-grid"><div><small>Before</small><b>${preview.before.assigned?'Assigned':'Not assigned'}</b></div><div><small>Expected</small><b>${preview.expected.assigned?'Assigned':'Not assigned'}</b></div></div><p>The server rechecks the user and role before one native change and verifies membership afterwards. Expires in 30 seconds.</p><p class="workflow-help">The account stays disabled. Passwords are not changed. This is not a complete effective-access or SQL-privilege impact analysis.</p>`;
+  $("#confirmation-phrase").textContent=preview.confirmation;$("#confirmation-input").value="";
+  $("#confirm-submit").disabled=true;$("#confirm-dialog").showModal();
+}
+async function readGuardRole(){
+  const resource=$("#guard-role-resource")?.value;
+  if(!resource)return;
+  const current=await walletGuard.role(resource);
+  if($("#guard-role-current")&&$("#guard-role-resource")?.value===resource)
+    $("#guard-role-current").textContent=`${resource}: ${current.permissions||'no grant'} · current configuration checked`;
+}
+async function prepareGuardRole(action){
+  const revision=state.renderRevision,epoch=state.connectionEpoch;
+  const resource=$("#guard-role-resource")?.value,permissions=action==='grant'?$("#guard-role-permission")?.value:'';
+  const preview=await walletGuard.previewRole(action,resource,permissions);
+  if(state.view!=="access"||revision!==state.renderRevision||epoch!==state.connectionEpoch){await walletGuard.cancel();return;}
+  state.pendingOperation={...operationOrigin(),guardId:preview.id,confirmation:preview.confirmation,
+    method:"POST",path:"/v1/role/previews/"+preview.id+"/execute",label:"Server-guarded role resource "+action,target:preview.target};
+  $("#confirm-title").textContent="Server-owned role grant preview";
+  $("#confirm-description").innerHTML=`<strong>${escapeHtml(preview.target)} · ${escapeHtml(resource)}</strong><p>Before: ${escapeHtml(preview.before.permissions||'no grant')}. Expected: ${escapeHtml(preview.expected.permissions||'no grant')}. The server rechecks the complete role grant set before one native change and verifies it after execution. Expires in 30 seconds.</p><p class="workflow-help">Affected users are not enumerated; changing a role may alter their access.</p>`;
+  $("#confirmation-phrase").textContent=preview.confirmation;$("#confirmation-input").value="";
+  $("#confirm-submit").disabled=true;$("#confirm-dialog").showModal();
+}
+function renderRecoveredGuardReceipt(){
+  const result=$("#guard-result");if(result)result.innerHTML=guardReceiptMarkup();
+  // Recovery already includes a validated current read. Do not leave a stale
+  // "Not read" warning beside that fresh evidence, and do not issue another GET.
+  const observation=walletGuard?.result?.observation,current=$("#guard-web-current");
+  if(webGuardProfile&&current&&typeof observation?.Enabled==="boolean"){
+    current.textContent=`Application: ${walletGuard.target} · ${observation.Enabled?"Enabled":"Disabled"} · Observed ${observation.at}`;
+    $("#guard-web-read-warning")?.remove();
+  }
+}
+async function prepareGuardWebapp(){
+  const revision=state.renderRevision,epoch=state.connectionEpoch;
+  const current=await walletGuard.webapp();
+  const preview=await walletGuard.previewWebapp(!current.Enabled);
+  if(state.view!=="webapps"||revision!==state.renderRevision||epoch!==state.connectionEpoch){await walletGuard.cancel();return;}
+  state.pendingOperation={...operationOrigin(),guardId:preview.id,confirmation:preview.confirmation,
+    method:"PUT",path:"/v2/web-app?name="+encodeURIComponent(preview.target),label:"Server-guarded Web app availability",target:preview.target};
+  $("#confirm-title").textContent="Server-owned Web app preview";
+  $("#confirm-description").innerHTML=`<strong>Availability only · ${escapeHtml(preview.target)}</strong><p>The server rechecks current permissions and the full configuration, sends only Enabled once and verifies the readback. Other configuration must stay unchanged. Preview expires in 30 seconds.</p><div class="preview-grid"><div><small>Before</small><b>${preview.before.Enabled?"Enabled":"Disabled"}</b></div><div><small>Expected</small><b>${preview.expected.Enabled?"Enabled":"Disabled"}</b></div></div><p class="workflow-help">No user-impact or active-session count is claimed. Disabling an application may interrupt its users. Enrollment does not mean the target is disposable.</p>`;
+  $("#confirmation-phrase").textContent=preview.confirmation;$("#confirmation-input").value="";
+  $("#confirm-submit").disabled=true;$("#confirm-dialog").showModal();
+}
+
+function updateGuardControls() {
+  if(!guardProfile)return;
+  const s=walletGuard?.status||{};
+  const disabled=s.busy||state.guardUiBusy;
+  for(const [id,allowed] of [["guard-enable",s.connected&&(!combinedGuardProfile||s.capability)&&(!managedGuardProfile||s.deploymentMode==='ACTIVE')],["guard-disable",s.writing],["guard-renew",s.connected&&s.renewable],["guard-edit",s.writing&&(!combinedGuardProfile||s.capability)],["guard-role-revoke",s.writing&&s.capability],["guard-role-read",s.connected&&s.capability],["guard-user-read",s.connected&&s.capability],["guard-user-remove",s.writing&&s.capability],["guard-disconnect",s.connected||s.lastId],["guard-inspect",s.connected],["guard-reconcile",s.connected]]){
+    const node=$("#"+id);if(node)node.disabled=!!disabled||!allowed;
+  }
+  if($("#guard-mode"))$("#guard-mode").textContent=s.connected?(s.writing?"Write-enabled · temporary":"Read-only"):"Disconnected / reconnect required";
+  if($("#guard-actor"))$("#guard-actor").textContent=s.actor||"Connect using Connection settings.";
+  if($("#guard-renew"))$("#guard-renew").textContent=s.connected?`Renew session · read-only (${s.remainingSeconds}s left)`:'Renew session · reconnect required';
+  if($("#guard-capability"))$("#guard-capability").textContent=s.connected?(s.capability?'Native permission available; every operation is rechecked.':walletGuard.capabilities?.[walletGuard.kind]?.reason==='target_policy_required'?'No target policy configured. A native administrator must enroll targets while the server is suspended.':'Unavailable: required native permission is missing. Reconnect after permission changes.'):'Connect to check native permissions.';
+  if($("#guard-deployment"))$("#guard-deployment").textContent=!s.connected?'Server deployment: reconnect to verify.':s.deploymentMode==='ACTIVE'?'Server deployment: guarded writes permitted; each operation still requires approval.':'Server deployment: read-only. Only its administrator can enable writes.';
+  $("#mode-label").textContent=s.connected?(userGuardProfile?"Live IRIS · user guard":roleGuardProfile?"Live IRIS · role guard":combinedGuardProfile?"Live IRIS · combined guard":webGuardProfile?"Live IRIS · Web app guard":"Live IRIS · wallet guard"):"Guard · disconnected";
+  $("#mode-dot").className="status-dot "+(s.connected?"":"bad");
+  $("#health-dot").className="status-dot "+(s.connected?"":"bad");
+  $("#health-label").textContent=s.connected?(combinedGuardProfile?"Shared guard connected":webGuardProfile?"Web app guard connected":"Wallet guard connected"):"Guard disconnected";
+  if(state.pendingOperation?.guardId)$("#confirm-submit").disabled=!!disabled||!s.writing||!s.previewValid||$("#confirmation-input").value!==state.pendingOperation.confirmation;
+  if($("#wallet-dialog").open)$("#wallet-preview").disabled=!!disabled||!s.writing;
+}
+
+async function guardUiAction(work) {
+  if(state.guardUiBusy)return;
+  state.guardUiBusy=true;updateGuardControls();
+  try{await work();}
+  catch(error){toast(guardMessage(error),"error",10000);}
+  finally{state.guardUiBusy=false;updateGuardControls();}
+}
+
+function clearGuardDialogs() {
+  state.pendingOperation=null;state.walletDraft=null;state.operationPreparationRevision++;
+  $("#confirm-dialog").close();$("#wallet-dialog").close();
+}
+
+async function prepareGuardWallet(draft) {
+  const preview=await walletGuard.preview(draft.name,$("#wallet-edit-resource").value,$("#wallet-use-resource").value);
+  assertOperationContext(draft);assertPreparationCurrent(draft);
+  if(state.view!=="secrets"){await walletGuard.cancel();return;}
+  $("#wallet-dialog").close();
+  state.pendingOperation={...draft,guardId:preview.id,confirmation:preview.confirmation,
+    method:"PUT",path:"/v2/wallet/collection?name="+encodeURIComponent(preview.target),label:"Server-guarded wallet policy · "+preview.id,target:preview.target};
+  $("#confirm-title").textContent="Server-owned wallet preview";
+  $("#confirm-description").innerHTML=`<strong>Wallet-only experimental server control</strong><p>Target: ${escapeHtml(preview.target)}. The server checks this exact preview, current permissions and both fields before one PUT, then performs its own readback. No client fallback. Expires in 30 seconds.</p><div class="preview-grid"><div><small>Before</small><b>${escapeHtml(JSON.stringify(preview.before))}</b></div><div><small>Expected</small><b>${escapeHtml(JSON.stringify(preview.expected))}</b></div></div>`;
+  $("#confirmation-phrase").textContent=preview.confirmation;$("#confirmation-input").value="";
+  $("#confirm-submit").disabled=true;$("#confirm-dialog").showModal();
+}
+
+async function runGuardWallet(operation) {
+  assertOperationContext(operation);
+  if(!operation.guardId)throw new Error("Only server-owned wallet previews are enabled in this profile");
+  const started=performance.now();
+  let outcome,summary,result;
+  try {
+    result=await walletGuard.execute(operation.guardId,operation.confirmation);
+    outcome=result.state==="VERIFIED"?"verified":result.state==="BLOCKED"?"blocked":"uncertain";
+    summary=result.state==="VERIFIED"?(userGuardProfile?"Server readback verified the direct user membership":roleGuardProfile?"Server readback verified the complete role grant set":webGuardProfile?"Server readback verified availability and unchanged configuration":"Server readback verified both policy fields"):result.state==="BLOCKED"?"Server blocked the change: "+result.reason:"Outcome uncertain; inspect the existing receipt, do not resend";
+  } catch(error) {
+    outcome=walletGuard.status.lastId===operation.guardId?"uncertain":"blocked";summary=guardMessage(error);
+  }
+  recordJournal(operation,{resultStatus:outcome==="verified"?"executed":outcome,verificationStatus:outcome==="verified"?"verified":outcome,verificationSummary:summary,durationMs:Math.round(performance.now()-started)});
+  toast(summary,outcome==="verified"?"ok":"error",10000);
+  return result;
 }
 
 async function renderOAuth() {
@@ -760,6 +960,7 @@ function demoReadback(path) {
 }
 
 async function readback(path, { unredacted = false } = {}) {
+  if(guardProfile)throw new Error("Direct administrative reads are disabled in the wallet guard profile");
   // Guided web-app PUTs must compare and preserve the real configuration.
   // Redacted values are only suitable for display, never for a write body.
   return state.demo ? demoReadback(path) : state.client.request(path, { redactResponse: !unredacted });
@@ -864,6 +1065,16 @@ async function prepareAccessOperation(action) {
 
 async function openWalletPolicy(name) {
   const origin = operationOrigin();
+  if(guardProfile){
+    if(!walletGuard?.status.writing)throw new Error("Enable the server write channel first");
+    const policy=await walletGuard.wallet(name);
+    assertOperationContext({...origin,path:"wallet guard"});assertPreparationCurrent(origin);
+    if(state.view!=="secrets")return;
+    state.walletDraft={...origin,name};
+    $("#wallet-target").textContent=name+" · server guard · "+location.origin;
+    $("#wallet-edit-resource").value=policy.EditResource;$("#wallet-use-resource").value=policy.UseResource;
+    $("#wallet-dialog").showModal();updateGuardControls();return;
+  }
   const path = appendQuery("/v2/wallet/collection", { name });
   const beforePayload = await readback(path);
   assertOperationContext({ ...origin, path });
@@ -882,6 +1093,7 @@ async function prepareWalletPolicy() {
   if (!draft) throw new TypeError("Open a collection policy first");
   assertOperationContext(draft);
   assertPreparationCurrent(draft);
+  if(guardProfile)return prepareGuardWallet(draft);
   const change = buildWalletPolicyMutation(draft.beforePayload, draft.name, $("#wallet-edit-resource").value, $("#wallet-use-resource").value);
   if (!change.changed) throw new TypeError("Policy is unchanged");
   $("#wallet-dialog").close();
@@ -983,10 +1195,17 @@ async function render() {
   });
   try {
     const renderer = { overview: renderOverview, processes: renderProcesses, infrastructure: renderInfrastructure, tasks: renderTasks, access: renderAccess, webapps: renderWebapps, secrets: renderSecrets, oauth: renderOAuth, logs: renderLogs, explorer: renderExplorer }[view];
-    const markup = await renderer();
+    const markup = guardProfile
+      ? webGuardProfile&&view==="webapps" ? await renderGuardWebapp()
+        : (roleGuardProfile||userGuardProfile)&&view==="access" ? renderGuardRole()
+        : !webGuardProfile&&view==="secrets" ? renderGuardWallet()
+        : view==="logs" ? shellCard(combinedGuardProfile?"Combined guard · session journal":webGuardProfile?"Web app guard · session journal":"Wallet guard · session journal",`<div class="workflow-form"><p class="workflow-help">Only this page’s guarded execution summaries. Recover persistent receipts in the guarded workspace. Other log sources are not connected in this profile.</p><pre class="guard-receipt">${escapeHtml(JSON.stringify(state.operationJournal,null,2))}</pre></div>`)
+        : `<div class="security-note"><div><strong>Not connected in this guard pilot</strong><p>This workspace is not yet served by the guard. No demo data or direct administrative API fallback is used.</p><button class="primary" data-go="${(roleGuardProfile||userGuardProfile)?"access":webGuardProfile?"webapps":"secrets"}">Open guarded ${userGuardProfile?"user":roleGuardProfile?"role":webGuardProfile?"Web app":"wallet"}</button></div></div>`
+      : await renderer();
     if (revision !== state.renderRevision) return;
     content.innerHTML = markup;
     bindDynamicControls();
+    if(guardProfile){updateGuardControls();return;}
     if (state.demo || state.client.successfulRequests > successfulBefore) setHealth(true);
     else if (view !== "explorer") setHealth(false);
   } catch (error) {
@@ -1003,6 +1222,22 @@ async function render() {
 }
 
 function bindDynamicControls() {
+  $$("[data-guard-access]").forEach(button=>button.addEventListener("click",()=>guardUiAction(()=>selectGuardAccess(button.dataset.guardAccess))));
+  if(userGuardProfile){
+    $("#guard-edit")?.addEventListener("click",()=>guardUiAction(()=>prepareGuardUser("assign")));
+    $("#guard-user-remove")?.addEventListener("click",()=>guardUiAction(()=>prepareGuardUser("remove")));
+    $("#guard-user-read")?.addEventListener("click",()=>guardUiAction(readGuardUser));
+  }
+  if(webGuardProfile)$("#guard-edit")?.addEventListener("click",()=>guardUiAction(prepareGuardWebapp));
+  if(roleGuardProfile){
+    $("#guard-edit")?.addEventListener("click",()=>guardUiAction(()=>prepareGuardRole("grant")));
+    $("#guard-role-revoke")?.addEventListener("click",()=>guardUiAction(()=>prepareGuardRole("revoke")));
+    $("#guard-role-read")?.addEventListener("click",()=>guardUiAction(readGuardRole));
+    $("#guard-role-resource")?.addEventListener("change",()=>{
+      state.guardRoleResource=$("#guard-role-resource").value;
+      if($("#guard-role-current"))$("#guard-role-current").textContent="Read the selected grant to refresh this result.";
+    });
+  }
   $$('[data-go]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.go)));
   $$('[data-open-explorer]').forEach((button) => button.addEventListener("click", () => {
     const [path, method] = button.dataset.openExplorer.split("|");
@@ -1030,14 +1265,24 @@ function bindDynamicControls() {
     finally { button.disabled = false; }
   }));
   bindRestSpecButtons();
+  if(guardProfile){
+    for(const [id,work] of [
+      ["guard-enable",()=>walletGuard.enable()],
+      ["guard-renew",async()=>{clearGuardDialogs();state.connectionEpoch++;try{await walletGuard.renew();toast("Session renewed · both workspaces read-only");}finally{await render();}}],
+      ["guard-disable",async()=>{clearGuardDialogs();await walletGuard.disable();}],
+      ["guard-disconnect",async()=>{clearGuardDialogs();state.operationJournal=[];state.guardRoleResource="";updateJournalUi();state.connectionEpoch++;try{await walletGuard.logout();}finally{await render();}}],
+      ["guard-inspect",async()=>{await walletGuard.recover($("#guard-operation-id").value.trim());renderRecoveredGuardReceipt();toast("Receipt inspected; no administrative change sent");}],
+      ["guard-reconcile",async()=>{await walletGuard.recover($("#guard-operation-id").value.trim(),true);renderRecoveredGuardReceipt();toast("Observation recorded; original result preserved");}],
+    ])$("#"+id)?.addEventListener("click",()=>guardUiAction(work));
+  }
   $$('[data-wallet-policy]').forEach((button) => button.addEventListener("click", async () => {
     if (button.disabled) return;
     button.disabled = true;
-    try { await openWalletPolicy(button.dataset.walletPolicy); }
+    try { if(guardProfile)await guardUiAction(()=>openWalletPolicy(button.dataset.walletPolicy));else await openWalletPolicy(button.dataset.walletPolicy); }
     catch (error) { toast(error.message, "error"); }
-    finally { button.disabled = false; }
+    finally { if(guardProfile)updateGuardControls();else button.disabled = false; }
   }));
-  if (state.view === "logs") {
+  if (state.view === "logs" && !guardProfile) {
     bindTimelineFilters();
     $$('[data-native-latest], [data-native-older]').forEach((button) => button.addEventListener("click", async () => {
       if (button.disabled) return;
@@ -1049,7 +1294,7 @@ function bindDynamicControls() {
       if (state.view === "logs") await render();
     }));
   }
-  if (state.view === "explorer") bindExplorer();
+  if (state.view === "explorer" && !guardProfile) bindExplorer();
 }
 
 function bindExplorer() {
@@ -1120,6 +1365,7 @@ async function executeExplorerRequest() {
 }
 
 async function prepareOperation(input) {
+  if(guardProfile)throw new Error("Generic administrative operations are unavailable in the wallet guard profile");
   const operation = { ...input };
   operation.preparationId ||= ++state.operationPreparationRevision;
   operation.context = input.context || { ...state.connectionContext };
@@ -1228,6 +1474,7 @@ async function verifyOperation(operation) {
 }
 
 async function runOperation(operation) {
+  if(guardProfile)return runGuardWallet(operation);
   const { method, path, body, fromExplorer = false } = operation;
   operation.boundConnection ||= currentOperationContext();
   const executionDemo = operation.boundConnection.demo;
@@ -1324,6 +1571,17 @@ async function runOperation(operation) {
 
 async function navigate(view) {
   if (!titles[view]) return;
+  if(combinedGuardProfile){
+    if(state.guardUiBusy||walletGuard?.status.busy){toast("Wait for the current guard request before changing workspace.");return;}
+    clearGuardDialogs();
+    if(walletGuard)try{
+      if(view==="webapps"||view==="secrets"||(managedGuardProfile&&view==="access"))
+        await walletGuard.select(view==="webapps"?"webapp":view==="access"?state.guardAccessKind:"wallet");
+      else await walletGuard.cancel();
+      webGuardProfile=walletGuard.kind==="webapp";
+      roleGuardProfile=walletGuard.kind==="role";userGuardProfile=walletGuard.kind==="user";
+    }catch(error){toast(guardMessage(error),"error");return;}
+  }
   if (view !== state.view) state.explorerRequestRevision++;
   state.view = view;
   history.replaceState(null, "", `#${view}`);
@@ -1336,6 +1594,7 @@ function setHealth(healthy) {
 }
 
 function setModeUi() {
+  if(guardProfile){updateGuardControls();return;}
   $("#mode-dot").className = `status-dot ${state.demo ? "demo" : ""}`;
   $("#mode-label").textContent = state.demo ? "Safe demo" : "Live IRIS";
 }
@@ -1372,25 +1631,29 @@ $("#connection-button").setAttribute("data-open-connection", "");
 $$('[data-open-connection]').forEach((button) => button.addEventListener("click", () => $("#connection-dialog").showModal()));
 $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => {
   const dialog = document.getElementById(button.dataset.closeDialog);
-  if (button.dataset.closeDialog === "confirm-dialog") state.pendingOperation = null;
+  if (button.dataset.closeDialog === "confirm-dialog") {
+    state.pendingOperation = null;
+    if(guardProfile)void guardUiAction(()=>walletGuard.cancel());
+  }
   dialog?.close();
 }));
 let nextLoginAttempt = 0;
 $("#wallet-dialog").addEventListener("close", () => { if (!$("#wallet-dialog").open) state.walletDraft = null; });
 $("#wallet-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  try { await prepareWalletPolicy(); }
+  try { if(guardProfile)await guardUiAction(prepareWalletPolicy);else await prepareWalletPolicy(); }
   catch (error) { toast(error.message, "error"); }
 });
 let pendingLoginAttempt = null;
 $("#connection-dialog").addEventListener("close", () => {
   if ($("#connection-dialog").open) return;
+  if(guardProfile&&pendingLoginAttempt!==null){walletGuard?.invalidate();clearGuardDialogs();state.connectionEpoch++;updateGuardControls();}
   pendingLoginAttempt = null;
   $("#password").value = "";
   $("#connect-submit").disabled = false;
   $("#connect-submit").textContent = "Apply";
 });
-$("#confirm-dialog").addEventListener("cancel", () => { state.pendingOperation = null; });
+$("#confirm-dialog").addEventListener("cancel", () => { state.pendingOperation = null;if(guardProfile)void guardUiAction(()=>walletGuard.cancel()); });
 $("#confirm-dialog").addEventListener("close", () => {
   if ($("#confirm-dialog").open) return;
   $("#confirmation-input").value = "";
@@ -1412,6 +1675,19 @@ $("#connection-form").addEventListener("submit", async (event) => {
   let nativeCandidate = null;
   let nativeStatus = "Enable native logs in Connection settings";
   try {
+    if(guardProfile){
+      if(!walletGuard)throw new Error(guardLoadError);
+      clearGuardDialogs();walletGuard.invalidate();state.connectionEpoch++;
+      state.operationJournal=[];updateJournalUi();
+      if($("#guard-result"))$("#guard-result").innerHTML="";
+      $("#password").value="";updateGuardControls();
+      await walletGuard.login(username,password);
+      if(pendingLoginAttempt!==attempt||!$("#connection-dialog").open){walletGuard.invalidate();return;}
+      state.demo=false;
+      state.connectionContext={mode:"live",instance:location.origin+(managedGuardProfile?"/api/irisops-managed-guard":combinedGuardProfile?"/api/irisops-combined-guard":webGuardProfile?"/api/irisops-web-guard":"/api/irisops-http-guard"),actor:username};
+      pendingLoginAttempt=null;$("#connection-dialog").close();
+      toast(combinedGuardProfile?(managedGuardProfile&&walletGuard.capabilities?.user?.target?"Connected to IRIS guard · four workspaces · read-only":managedGuardProfile&&walletGuard.capabilities?.role?.target?"Connected to IRIS guard · three workspaces · read-only":"Connected to IRIS guard · two workspaces · read-only"):webGuardProfile?"Connected to IRIS guard · Web app only · read-only":"Connected to IRIS guard · wallet only · read-only");await render();return;
+    }
     const candidate = new IrisAdminClient({ baseUrl, fetchImpl: state.client.fetchImpl, timeoutMs: state.client.timeoutMs });
     if (!useDemo) {
       if (!username || !password) throw new Error("Username and password are required for a live connection");
@@ -1453,7 +1729,7 @@ $("#connection-form").addEventListener("submit", async (event) => {
     toast(useDemo ? "Safe demo enabled" : "Connected to IRIS");
     await render();
   } catch (error) {
-    if (pendingLoginAttempt === attempt) toast(error.message, "error");
+    if (pendingLoginAttempt === attempt) toast(guardProfile?guardMessage(error):error.message, "error");
   }
   finally {
     nativeCandidate?.close();
@@ -1466,12 +1742,18 @@ $("#connection-form").addEventListener("submit", async (event) => {
   }
 });
 $("#confirmation-input").addEventListener("input", () => {
+  if(guardProfile){updateGuardControls();return;}
   $("#confirm-submit").disabled = $("#confirmation-input").value !== $("#confirmation-phrase").textContent;
 });
 $("#confirm-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const operation = state.pendingOperation;
   if (!operation || $("#confirmation-input").value !== (operation.confirmation || confirmationPhrase(operation.method, operation.path))) return;
+  if(guardProfile){
+    if(!walletGuard?.status.previewValid||!walletGuard.status.writing||state.guardUiBusy)return;
+    state.pendingOperation=null;$("#confirm-dialog").close();
+    await guardUiAction(async()=>{await runGuardWallet(operation);await render();});return;
+  }
   state.pendingOperation = null;
   $("#confirm-dialog").close();
   if (operation) {
@@ -1486,6 +1768,22 @@ $("#confirm-form").addEventListener("submit", async (event) => {
 
 const initial = location.hash.slice(1);
 if (titles[initial]) state.view = initial;
+if(guardProfile){
+  if(combinedGuardProfile){
+    webGuardProfile=state.view==="webapps";roleGuardProfile=managedGuardProfile&&state.view==="access";
+    if((webGuardProfile||roleGuardProfile)&&walletGuard)await walletGuard.select(webGuardProfile?"webapp":"role");
+  }
+  if(!initial)state.view=webGuardProfile?"webapps":"secrets";
+  $("#demo-mode").checked=false;$("#demo-mode").disabled=true;
+  $("#native-logs-mode").checked=false;$("#native-logs-mode").disabled=true;
+  $("#base-url").value=(managedGuardProfile?"/api/irisops-managed-guard":combinedGuardProfile?"/api/irisops-combined-guard":webGuardProfile?"/api/irisops-web-guard":"/api/irisops-http-guard")+" (fixed lab)";$("#base-url").disabled=true;$("#role").disabled=true;
+  $("#guard-connection-note").hidden=false;
+  if(webGuardProfile)$("#guard-connection-note").textContent="Experimental Web app server profile on local IRIS 52801. Only the disposable application availability is supported. Server-held administrative token; explicit reconnect after 60 seconds; no direct API fallback.";
+  if(combinedGuardProfile)$("#guard-connection-note").textContent="Experimental shared server session on local IRIS 52801. Disposable wallet and Web app only. Separate write channels and recovery keys; common 60-second authorization and logout. No direct API fallback.";
+  if(managedGuardProfile)$("#guard-connection-note").textContent="Experimental managed server session on "+location.origin+". Only explicitly enrolled wallet, Web app and optional test-role targets. Installer-controlled read-only mode, separate write channels and recovery keys; "+(location.protocol==='https:'?'native IRIS expiry takes precedence over the 5-minute cap and 2-minute inactivity limit. Write grants are at most 60 seconds.':'authorization is at most 60 seconds, subject to native IRIS expiry.')+" No automatic renewal or direct API fallback.";
+  $("#connection-default-note").hidden=true;
+  setInterval(updateGuardControls,250);
+}
 setModeUi();
 updateJournalUi();
-render();
+await render();

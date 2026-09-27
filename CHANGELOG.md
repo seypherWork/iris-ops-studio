@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.3.0 — 2026-09-27
+
+- Optional IRIS-native managed endpoint with deployment READ_ONLY/SUSPENDED
+  gates, per-workflow approval, target enrollment and native actor permissions.
+- Wallet policy, web-app availability, custom test-role resources and disabled
+  test-user membership use preview, fresh validation and native readback.
+- Persistent actor/proof-bound receipts support observation and reconciliation
+  without resubmitting uncertain changes. Replay cannot dispatch a second write.
+- Membership edits add/remove only the selected role instead of replacing the
+  entire list; eligibility remains deliberately limited to disabled test users.
+- Versioned standalone review bundle, interactive plan approvals, strict TLS and
+  public-only certificate preflight, guided reviewer documentation and retained
+  stop receipts. No automatic trust import, account grants or data deletion.
+- Final audit fixes: independent startup-download failure detection; truthful
+  local-key cleanup versus remote-logout errors; fresh, separately retained stop
+  attempts after cancellation/failure; consistent user-profile documentation.
+- Regression tests cover denied/no-effect storage cleanup, simultaneous logout
+  failure, delayed startup modules and repeated stop approvals. The source/IPM
+  version is 1.3.0; the managed guard remains a separate optional review bundle.
+- The optional guard is not a general production-user editor or an upgrade
+  of an existing IRIS database. Release 1.2.1 and historical artifacts are retained.
+
 ## 1.2.1 — 2026-09-25
 
 - Optional, independently authenticated IRIS-native log reader for bounded

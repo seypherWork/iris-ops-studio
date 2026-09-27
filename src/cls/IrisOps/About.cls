@@ -4,7 +4,7 @@ Class IrisOps.About Extends %RegisteredObject
 
 ClassMethod Version() As %String
 {
-    Quit "1.2.1"
+    Quit "1.3.0"
 }
 
 ClassMethod ApiGeneration() As %String

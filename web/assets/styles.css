@@ -127,4 +127,19 @@ dialog { width: min(560px, calc(100vw - 40px)); max-height: calc(100vh - 22px); 
 .native-log-source { display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
 .native-log-source > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .native-log-source > span, .native-log-source > small { color: var(--muted); }
+.guard-receipt { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 360px; max-width: 100%; font-size: 11px; }
+#guard-web-current { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 760px) {
+  .guard-profile .topbar { flex-wrap: wrap; }
+  .guard-profile .top-actions { max-width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .guard-profile .health-chip { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+}
+.workflow-form input { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #081318; color: var(--text); padding: 10px; box-sizing: border-box; }
+.workflow-actions button:disabled, .workflow-form > button:disabled { opacity: .4; cursor: not-allowed; }
 @media (max-width: 700px) { .native-log-controls { grid-template-columns: 1fr; padding: 14px; } }
+:root { --startup-panel: #13252b; }
+.startup-status { margin: 16px; padding: 18px 22px; border: 1px solid #335962; border-radius: 12px; background: var(--startup-panel); color: #e8f5f5; }
+.startup-status p { margin: 8px 0; line-height: 1.5; }
+.startup-status a { color: #5be4c6; text-decoration: underline; }
+.startup-status a:focus-visible { outline: 2px solid #5be4c6; outline-offset: 4px; }
+#app-root[inert] { opacity: .65; }

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>IRIS Ops Studio &middot; Server guard lab</title><link rel="stylesheet" href="guard.css"></head>
+<body><main>
+<header><div><p class="eyebrow">IRIS OPS STUDIO / EXPERIMENTAL</p><h1>Controlled changes.<br><span>Recoverable evidence.</span></h1></div><span class="badge" id="connection-state">Disconnected</span></header>
+<p class="notice">Isolated IRIS lab &middot; Wallet pilot only &middot; Not the published application. No native API write fallback.</p>
+<div id="status" role="status" aria-live="polite">Connect to the disposable instance to begin. Changes start locked.</div>
+<div class="grid">
+<section class="card"><p class="eyebrow">01 / CONNECTION</p><h2>Live IRIS</h2>
+<p>Credentials go only to this local instance. The server keeps the administrative token; this page never receives it. Pilot authorization lasts 60 seconds.</p>
+<form id="login-form" method="post"><label>Username<input id="username" autocomplete="username" required maxlength="160"></label><label>Password<input id="password" type="password" autocomplete="current-password" required></label><div class="actions"><button id="connect" type="submit" disabled>Connect</button><button id="logout" type="button" class="secondary" disabled>Disconnect</button></div></form>
+<p id="actor" class="small">No active operator</p></section>
+<section class="card"><p class="eyebrow">02 / SERVER CONTROL</p><h2>Write access</h2><p>Explicit, temporary and limited to <code>IrisOps_GuardProbeWallet</code>. Enabling does not grant IRIS permissions.</p>
+<p id="write-state" class="state">Read-only</p><div class="actions"><button id="enable" disabled>Enable writes for 60s</button><button id="disable" class="secondary" disabled>Return to read-only</button></div><p class="small">Every reload creates a new read-only channel after reconnecting.</p></section>
+</div>
+<section class="card"><div class="section-head"><div><p class="eyebrow">03 / WALLET POLICY</p><h2>Review before dispatch</h2></div><button id="read" class="secondary" disabled>Read current policy</button></div>
+<p id="current" class="small">Current policy has not been read.</p>
+<form id="policy-form"><div class="grid fields"><label>Edit permission<select id="edit"><option value="IrisOps_GuardProbeResource:WRITE">ProbeResource &middot; WRITE</option><option value="IrisOps_GuardProbeAlternate:WRITE">ProbeAlternate &middot; WRITE</option></select></label><label>Use permission<select id="use"><option value="IrisOps_GuardProbeResource:READ">ProbeResource &middot; READ</option><option value="IrisOps_GuardProbeAlternate:READ">ProbeAlternate &middot; READ</option></select></label></div><button id="preview" type="submit" disabled>Create server preview</button></form>
+<div id="preview-panel" hidden><h3>Server-owned preview</h3><pre id="preview-diff"></pre><p>Type <strong id="phrase"></strong> to authorize this exact operation.</p><label>Confirmation<input id="confirmation" autocomplete="off" spellcheck="false"></label><div class="actions"><button id="execute" disabled>Execute once &amp; verify</button><button id="cancel" class="secondary">Cancel preview</button></div><p class="small">Preview expires after 30 seconds. A changed target is blocked before PUT.</p></div></section>
+<section class="card"><p class="eyebrow">04 / OPERATION RECOVERY</p><h2>Read again. Never resend.</h2><p>Recover your receipt after reconnecting. A current match does not prove who caused it; the original execution record is preserved.</p>
+<label>Operation ID<input id="operation-id" maxlength="32" pattern="[a-f0-9]{32}" autocomplete="off" spellcheck="false" placeholder="32-character receipt ID"></label><p class="small">This tab keeps a private recovery key for each submitted operation (up to 64). Keys survive reload and reconnect, but Disconnect forgets them. Closing the tab normally clears them; browser session restoration may retain them. A key requires your login and current permissions; it cannot authorize a change by itself. Lost keys cannot be reissued. No passwords, administrative tokens or receipt contents are stored here.</p>
+<div class="actions"><button id="inspect" class="secondary" disabled>Inspect receipt &amp; current state</button><button id="reconcile" disabled>Record a read-only check</button></div>
+<div id="receipt-panel" hidden><div class="results"><div><span class="small">Original execution</span><h3 id="original-state"></h3></div><div><span class="small">Current observation</span><h3 id="observation-state"></h3></div></div><p id="causality" class="notice"></p><pre id="receipt-detail"></pre></div></section>
+<footer>Server guard pilot &middot; IRIS Community 2026.2 &middot; Loopback 52801 &middot; No production targets</footer>
+</main><script type="module" src="app.js"></script></body></html>
