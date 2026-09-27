@@ -4,6 +4,41 @@
 
 # IRIS Ops Studio
 
+## 1.3.0 — Bounded Server Guard & Durable Recovery
+
+This checkout also contains the **optional managed server guard**, prepared and
+validated for bounded technical evaluation. It is not installed by the standard console commands below and does
+not turn every existing workspace into a server-guarded workflow.
+
+- [Judge's installation and walkthrough guide](experimental/guard/package/judge-guide.md).
+- [Current candidate C: final audit corrections, hashes and release gate](docs/final-audit-remediation-20260927.md).
+- [Historical candidate B validation](docs/judge-review-candidate-20260927.md).
+- [Guard scope and validation history](experimental/guard/README.md).
+- Four bounded workflows: wallet access policy, web-app availability, custom
+  test-role resources, and membership of one **disabled test user**.
+- Server-side READ_ONLY enforcement on that endpoint, separate write approvals,
+  fresh preconditions, native readback and persistent uncertainty recovery.
+- Independent, digest-checked local source package with an interactive installer,
+  public-certificate verification and stop-without-deletion flow. No npm install.
+- Current source: **269/269 JavaScript tests**; native log reader: **20/20 Linux
+  tests**. Candidate C passed a fresh real-IRIS installation with all four bounded
+  workflows, interruption/recovery checks and desktop/mobile browser validation.
+
+The optional guard is a bounded evaluation package, **not production readiness, general active
+user management or an in-place upgrade**. Operator credentials, TLS trust and
+target enrollment are deliberate administrator steps. Earlier versions and
+historical validation numbers below remain explicitly versioned; the videos
+show earlier versions, not this guard.
+
+The normal 1.3.0 IPM module installs the direct console and log
+extension, **not the optional managed guard**. Use its separate, exact-hash
+review ZIP and judge's guide for server-enforced workflows. Download it from the
+[1.3.0 release](https://github.com/seypherWork/iris-ops-studio/releases/tag/v1.3.0).
+The immutable bundle and audit reports retain their pre-publication status/date
+as historical evidence; their limits still apply.
+
+## Earlier 1.2.1 baseline, retained in 1.3.0
+
 > **Version 1.2.1.** Two focused additions—bounded native IRIS logs and guided
 > wallet access-policy changes—were tested on disposable IRIS Community 2026.2.
 > The [validation record](docs/development-validation-20260925.md) identifies
@@ -16,7 +51,7 @@
 <p align="center">
   <a href="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml"><img src="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml/badge.svg" alt="Verification status"></a>
   <img src="https://img.shields.io/badge/IRIS-2026.2-00a79d" alt="InterSystems IRIS 2026.2">
-  <img src="https://img.shields.io/badge/tests-103%20passing-26a269" alt="103 JavaScript tests passing locally">
+  <img src="https://img.shields.io/badge/tests-269%20passing-26a269" alt="269 JavaScript tests passing locally for 1.3.0">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
