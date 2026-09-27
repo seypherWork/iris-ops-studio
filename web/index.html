@@ -5,9 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <title>IRIS Ops Studio</title>
-    <link rel="stylesheet" href="assets/styles.css?v=1.2.1" />
+    <link rel="stylesheet" href="assets/styles.css?v=1.2.1-startup1" />
   </head>
   <body>
+    <section id="startup-status" class="startup-status" role="status" aria-live="polite">
+      <strong id="startup-title">Starting IRIS Ops Studio</strong>
+      <p id="startup-message">Loading the interface. Controls remain unavailable until initialization finishes. If loading does not finish, reload the page.</p>
+      <a href="" id="startup-reload">Reload page</a>
+      <noscript><p>JavaScript is required. No connection has been opened.</p></noscript>
+    </section>
+    <div id="app-root" inert aria-busy="true">
     <div class="shell">
       <aside class="sidebar">
         <a class="brand" href="#overview" aria-label="IRIS Ops Studio home">
@@ -34,9 +41,9 @@
         <div class="sidebar-footer">
           <div class="mode-card">
             <span class="status-dot demo" id="mode-dot"></span>
-            <span><small>Data source</small><strong id="mode-label">Safe demo</strong></span>
+            <span><small>Data source</small><strong id="mode-label">Not connected</strong></span>
           </div>
-          <button class="ghost wide" id="connection-button">Connection settings</button>
+          <button class="ghost wide" id="connection-button" data-startup-control disabled>Connection settings</button>
         </div>
       </aside>
 
@@ -44,12 +51,12 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">InterSystems IRIS administration</p>
-            <h1 id="page-title">Operational overview</h1>
+            <h1 id="page-title">Starting interface</h1>
           </div>
           <div class="top-actions">
-            <span class="health-chip"><span class="status-dot" id="health-dot"></span><span id="health-label">Demo healthy</span></span>
+            <span class="health-chip"><span class="status-dot" id="health-dot"></span><span id="health-label">Loading</span></span>
             <button class="ghost journal-button" id="journal-button">Journal <span id="journal-count">0</span></button>
-            <button class="ghost mobile-only" data-open-connection>Connection</button>
+            <button class="ghost mobile-only" data-open-connection data-startup-control disabled>Connection</button>
             <button class="ghost" id="refresh-button">Refresh</button>
           </div>
         </header>
@@ -64,7 +71,8 @@
           <div><p class="eyebrow">Connection</p><h2>Connect to IRIS</h2></div>
           <button class="icon-button" type="button" data-close-dialog="connection-dialog" aria-label="Close">&#215;</button>
         </div>
-        <p class="dialog-copy">Credentials are sent only to the selected IRIS instance. Passwords are cleared after each attempt. Access and refresh tokens stay in page memory only and are never written to the operation journal.</p>
+        <p class="dialog-copy" id="connection-default-note">Credentials are sent only to the selected IRIS instance. Passwords are cleared after each attempt. Access and refresh tokens stay in page memory only and are never written to the operation journal.</p>
+        <p class="dialog-copy" id="guard-connection-note" hidden>Experimental wallet-only server profile on local IRIS 52801. The server holds the administrative token; the browser receives none. Reconnect explicitly after 60 seconds. Other workspaces and native logs are not connected. No direct API fallback.</p>
         <label>Admin API base URL<input id="base-url" name="baseUrl" value="/api/admin" autocomplete="url" /></label>
         <div class="field-grid">
           <label>Username<input id="username" name="username" autocomplete="username" /></label>
@@ -109,6 +117,25 @@
       <div class="dialog-actions"><button type="button" class="ghost" data-close-dialog="wallet-dialog">Cancel</button><button type="submit" class="primary" id="wallet-preview">Preview policy change</button></div>
     </form>
   </dialog>
-  <script type="module" src="assets/app.js?v=1.2.1"></script>
+    </div>
+  <script id="startup-watchdog">
+    // Independent of module downloads; only locks the UI and shows a safe error.
+    (() => {
+      const fail = () => {
+        if (['ready', 'failed'].includes(document.documentElement.dataset.startup)) return;
+        document.documentElement.dataset.startup = 'failed';
+        const root = document.getElementById('app-root');
+        root.inert = true; root.setAttribute('aria-busy', 'false');
+        document.querySelectorAll('[data-startup-control]').forEach(control => { control.disabled = true; });
+        document.getElementById('startup-status').hidden = false;
+        document.getElementById('startup-title').textContent = 'Interface could not start';
+        document.getElementById('startup-message').textContent = 'Loading failed or took too long. Controls remain unavailable. Reload the page to try again.';
+      };
+      const onError = event => { if (event.target?.id === 'startup-module') fail(); };
+      window.addEventListener('error', onError, true);
+      setTimeout(() => { window.removeEventListener('error', onError, true); fail(); }, 15000);
+    })();
+  </script>
+  <script id="startup-module" type="module" src="assets/startup.js?v=1.2.1-startup2"></script>
   </body>
 </html>
