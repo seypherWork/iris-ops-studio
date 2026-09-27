@@ -118,11 +118,11 @@ ClassMethod NativeChange(build As %String, enabled As %Boolean)
     new $namespace set $namespace="%SYS"
     if '##class(Security.Applications).Exists(..#App) {
         set p("NameSpace")="IRISOPS",p("Description")=..#Owner,p("DispatchClass")=..Dispatcher(build),p("Enabled")=0
-        set p("AutheEnabled")=32,p("UseCookies")=2,p("CookiePath")=..#App_"/",p("Timeout")=600,p("SessionScope")=2,p("UserCookieScope")=2,p("MatchRoles")=":IrisOps_GuardStorage"
+        set p("AutheEnabled")=32,p("UseCookies")=2,p("CookiePath")=..#App_"/",p("Timeout")=3600,p("SessionScope")=2,p("UserCookieScope")=2,p("MatchRoles")=":IrisOps_GuardStorage"
         set p("ServeFiles")=0,p("CSPZENEnabled")=1,p("InbndWebServicesEnabled")=0
         do ..Require(##class(Security.Applications).Create(..#App,.p))
     }
-    kill p set p("DispatchClass")=..Dispatcher(build),p("Enabled")=enabled,p("CSPZENEnabled")=1
+    kill p set p("DispatchClass")=..Dispatcher(build),p("Enabled")=enabled,p("CSPZENEnabled")=1,p("Timeout")=3600
     do ..Require(##class(Security.Applications).Modify(..#App,.p))
 }
 /// Test seam has no behavior in this implementation.

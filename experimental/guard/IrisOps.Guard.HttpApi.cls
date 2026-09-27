@@ -84,7 +84,7 @@ ClassMethod Connect() As %Status
         if '##class(IrisOps.Guard.Vault).Seal(upstream.access,.seconds,upstream.expiresAt,upstream.%Get("refresh","")) { set status=503,result={"error":"custody_unavailable"} quit }
         set result={"connected":true,"actor":($username),"mode":"read-only","authorizationSeconds":(seconds),"experimental":true}
         if cap=300 {
-            set result.idleSeconds=$select(seconds<120:seconds,1:120)
+            set result.idleSeconds=$get(%session.Data("IrisOpsGuard","auth","idleUntil"))-##class(IrisOps.Guard.Vault).Now()
             set result.renewalId=$get(%session.Data("IrisOpsGuard","auth","renewalId"))
             set result.renewalSeconds=$get(%session.Data("IrisOpsGuard","auth","renewUntil"))-##class(IrisOps.Guard.Vault).Now()
         }

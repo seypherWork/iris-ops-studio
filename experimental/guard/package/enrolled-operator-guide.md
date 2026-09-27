@@ -2,7 +2,11 @@
 
 EXPERIMENTAL / NOT READY FOR PRODUCTION. This independent source bundle installs
 the managed guard into a **NEW disposable local IRIS Community 2026.2 instance**.
-It is not the public 1.2.1 package, an in-place upgrade, or a released 1.3 version.
+It is not the standard 1.3.1 IPM/Docker package or an in-place upgrade.
+Verify the exact 1.3.1 review-bundle hash before evaluation. The normal
+console and this guard use separate entry points.
+Only the enrolled workflows are served here. In particular, Overview and its
+demo-only CPU gauge are not live guard features.
 It protects wallet access-policy changes, web-application availability and
 an optional, narrowly enrolled role-resource grant workflow through its own
 endpoint. It does not restrict administrators

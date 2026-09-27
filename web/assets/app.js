@@ -63,9 +63,9 @@ let walletGuard = null, guardMessage = () => "Guard unavailable. No direct IRIS 
 if (guardProfile) {
   document.documentElement.classList.add("guard-profile");
   try {
-    const integration = await import("./wallet-guard.js");
+    const integration = await import("./wallet-guard.js?v=1.3.1");
     guardMessage = integration.guardMessage;
-    const Controller=combinedGuardProfile?(await import("./combined-guard.js")).CombinedGuard:integration.WalletGuard;
+    const Controller=combinedGuardProfile?(await import("./combined-guard.js?v=1.3.1")).CombinedGuard:integration.WalletGuard;
     walletGuard = new Controller({ origin: new URL(location.href).origin,kind:webGuardProfile?"webapp":"wallet",profile:managedGuardProfile?"managed":"combined",
       storage: { getItem: (k) => sessionStorage.getItem(k), setItem: (k,v) => sessionStorage.setItem(k,v), removeItem: (k) => sessionStorage.removeItem(k) } });
   } catch { throw new Error("Guard initialization failed; no direct API fallback"); }
@@ -606,7 +606,7 @@ function renderGuardWallet(currentWebState=null) {
     ${shellCard(userGuardProfile?"Server-controlled user membership":roleGuardProfile?"Server-controlled role grant":webGuardProfile?"Server-controlled Web app":"Server-controlled wallet",`<div class="workflow-form">
       <strong id="guard-mode">${status.connected?"Read-only":"Disconnected"}</strong><p id="guard-actor" class="workflow-help">${escapeHtml(status.actor||"Connect using Connection settings.")}</p>
       <div class="workflow-actions"><button class="primary" id="guard-enable" disabled>Enable writes for 60s</button><button class="ghost" id="guard-disable" disabled>Return to read-only</button>${managedGuardProfile&&location.protocol==='https:'?'<button class="ghost" id="guard-renew" disabled>Renew session · read-only</button>':''}<button class="ghost" id="guard-disconnect" disabled>Disconnect &amp; forget keys</button></div>
-      <p class="workflow-help">A new connection starts read-only. ${managedGuardProfile&&location.protocol==='https:'?'Native authorization typically expires after about 60 seconds. Renew explicitly before expiry: this cancels approvals in every guarded workspace and returns to read-only. The total session remains capped at 5 minutes from login and 2 minutes of API inactivity, subject to native expiry. No automatic renewal; a lost renewal response requires reconnecting.':'Authorization lasts at most 60 seconds in this pilot, subject to native IRIS expiry.'} Reconnecting in a shared browser session may invalidate another tab’s approval.${combinedGuardProfile?' One login serves the guarded workspaces; write access and recovery keys stay separate.':''}</p>
+      <p class="workflow-help">A new connection starts read-only. ${managedGuardProfile&&location.protocol==='https:'?'This session ends one hour after login. Native authorization is renewed as needed while this tab is visible and no write or preview is active. Each renewal clears write approvals and returns to read-only. A lost renewal response requires reconnecting; no change is retried.':'Authorization lasts at most 60 seconds in this pilot, subject to native IRIS expiry.'} Reconnecting in a shared browser session may invalidate another tab’s approval.${combinedGuardProfile?' One login serves the guarded workspaces; write access and recovery keys stay separate.':''}</p>
       ${combinedGuardProfile?`<p id="guard-capability" class="workflow-help">${status.connected?(status.capability?'Native permission available; every operation is rechecked.':'Unavailable: required native permission is missing. Reconnect after permission changes.'):'Connect to check native permissions.'}</p>`:''}
       ${managedGuardProfile?'<p id="guard-deployment" class="workflow-help">Checking server deployment state.</p>':''}
       ${userGuardProfile?`<p class="workflow-help">Only this enrolled disabled test account and role are eligible. This does not enable the account, edit passwords or calculate effective access.</p>
@@ -699,12 +699,12 @@ function updateGuardControls() {
   if(!guardProfile)return;
   const s=walletGuard?.status||{};
   const disabled=s.busy||state.guardUiBusy;
-  for(const [id,allowed] of [["guard-enable",s.connected&&(!combinedGuardProfile||s.capability)&&(!managedGuardProfile||s.deploymentMode==='ACTIVE')],["guard-disable",s.writing],["guard-renew",s.connected&&s.renewable],["guard-edit",s.writing&&(!combinedGuardProfile||s.capability)],["guard-role-revoke",s.writing&&s.capability],["guard-role-read",s.connected&&s.capability],["guard-user-read",s.connected&&s.capability],["guard-user-remove",s.writing&&s.capability],["guard-disconnect",s.connected||s.lastId],["guard-inspect",s.connected],["guard-reconcile",s.connected]]){
+  for(const [id,allowed] of [["guard-enable",s.connected&&(!combinedGuardProfile||s.capability)&&(!managedGuardProfile||s.deploymentMode==='ACTIVE')],["guard-disable",s.writing],["guard-renew",s.renewable],["guard-edit",s.writing&&(!combinedGuardProfile||s.capability)],["guard-role-revoke",s.writing&&s.capability],["guard-role-read",s.connected&&s.capability],["guard-user-read",s.connected&&s.capability],["guard-user-remove",s.writing&&s.capability],["guard-disconnect",s.connected||s.renewable||s.lastId],["guard-inspect",s.connected],["guard-reconcile",s.connected]]){
     const node=$("#"+id);if(node)node.disabled=!!disabled||!allowed;
   }
-  if($("#guard-mode"))$("#guard-mode").textContent=s.connected?(s.writing?"Write-enabled · temporary":"Read-only"):"Disconnected / reconnect required";
+  if($("#guard-mode"))$("#guard-mode").textContent=s.connected?(s.writing?"Write-enabled · temporary":"Read-only")+` · session ${Math.ceil((s.sessionRemainingSeconds||0)/60)}m left`:s.renewable?`Renewing read-only access · session ${Math.ceil((s.sessionRemainingSeconds||0)/60)}m left`:"Disconnected / reconnect required";
   if($("#guard-actor"))$("#guard-actor").textContent=s.actor||"Connect using Connection settings.";
-  if($("#guard-renew"))$("#guard-renew").textContent=s.connected?`Renew session · read-only (${s.remainingSeconds}s left)`:'Renew session · reconnect required';
+  if($("#guard-renew"))$("#guard-renew").textContent=s.renewable?`Renew read-only access${s.connected?` (${s.remainingSeconds}s left)`:''}`:'Session ended · reconnect required';
   if($("#guard-capability"))$("#guard-capability").textContent=s.connected?(s.capability?'Native permission available; every operation is rechecked.':walletGuard.capabilities?.[walletGuard.kind]?.reason==='target_policy_required'?'No target policy configured. A native administrator must enroll targets while the server is suspended.':'Unavailable: required native permission is missing. Reconnect after permission changes.'):'Connect to check native permissions.';
   if($("#guard-deployment"))$("#guard-deployment").textContent=!s.connected?'Server deployment: reconnect to verify.':s.deploymentMode==='ACTIVE'?'Server deployment: guarded writes permitted; each operation still requires approval.':'Server deployment: read-only. Only its administrator can enable writes.';
   $("#mode-label").textContent=s.connected?(userGuardProfile?"Live IRIS · user guard":roleGuardProfile?"Live IRIS · role guard":combinedGuardProfile?"Live IRIS · combined guard":webGuardProfile?"Live IRIS · Web app guard":"Live IRIS · wallet guard"):"Guard · disconnected";
@@ -1604,6 +1604,32 @@ function updateJournalUi() {
   if (count) count.textContent = String(state.operationJournal.length);
 }
 
+function configureGuardNavigation() {
+  if (!guardProfile) return;
+  const available = new Set(["logs", webGuardProfile ? "webapps" : "secrets"]);
+  if (combinedGuardProfile) available.add("webapps");
+  if (managedGuardProfile) available.add("access");
+  $$(".nav-item").forEach((button) => {
+    button.hidden = !available.has(button.dataset.view);
+    if (button.dataset.view === "logs") button.lastChild.textContent = "Session journal";
+  });
+  const guardHome = webGuardProfile ? "webapps" : "secrets";
+  $(".brand").setAttribute("href", `#${guardHome}`);
+  $$(".nav-label").forEach((label) => {
+    let item = label.nextElementSibling;
+    let hasAvailableItem = false;
+    while (item && !item.classList.contains("nav-label")) {
+      if (item.classList.contains("nav-item") && !item.hidden) hasAvailableItem = true;
+      item = item.nextElementSibling;
+    }
+    label.hidden = !hasAvailableItem;
+  });
+  if (!available.has(state.view)) {
+    state.view = guardHome;
+    history.replaceState(null, "", `#${state.view}`);
+  }
+}
+
 let toastTimer;
 function toast(message, tone = "ok", durationMs = 3200) {
   const element = $("#toast");
@@ -1774,16 +1800,26 @@ if(guardProfile){
     if((webGuardProfile||roleGuardProfile)&&walletGuard)await walletGuard.select(webGuardProfile?"webapp":"role");
   }
   if(!initial)state.view=webGuardProfile?"webapps":"secrets";
+  configureGuardNavigation();
   $("#demo-mode").checked=false;$("#demo-mode").disabled=true;
   $("#native-logs-mode").checked=false;$("#native-logs-mode").disabled=true;
   $("#base-url").value=(managedGuardProfile?"/api/irisops-managed-guard":combinedGuardProfile?"/api/irisops-combined-guard":webGuardProfile?"/api/irisops-web-guard":"/api/irisops-http-guard")+" (fixed lab)";$("#base-url").disabled=true;$("#role").disabled=true;
   $("#guard-connection-note").hidden=false;
   if(webGuardProfile)$("#guard-connection-note").textContent="Experimental Web app server profile on local IRIS 52801. Only the disposable application availability is supported. Server-held administrative token; explicit reconnect after 60 seconds; no direct API fallback.";
   if(combinedGuardProfile)$("#guard-connection-note").textContent="Experimental shared server session on local IRIS 52801. Disposable wallet and Web app only. Separate write channels and recovery keys; common 60-second authorization and logout. No direct API fallback.";
-  if(managedGuardProfile)$("#guard-connection-note").textContent="Experimental managed server session on "+location.origin+". Only explicitly enrolled wallet, Web app and optional test-role targets. Installer-controlled read-only mode, separate write channels and recovery keys; "+(location.protocol==='https:'?'native IRIS expiry takes precedence over the 5-minute cap and 2-minute inactivity limit. Write grants are at most 60 seconds.':'authorization is at most 60 seconds, subject to native IRIS expiry.')+" No automatic renewal or direct API fallback.";
+  if(managedGuardProfile)$("#guard-connection-note").textContent="Experimental managed server session on "+location.origin+". Only explicitly enrolled wallet, Web app and optional test-role targets. Installer-controlled read-only mode, separate write channels and recovery keys; "+(location.protocol==='https:'?'session ends one hour after login; native read-only authorization renews while this tab is visible and no write or preview is active. Write grants last at most 60 seconds.':'authorization is at most 60 seconds, subject to native IRIS expiry.')+" No automatic change retry or direct API fallback.";
   $("#connection-default-note").hidden=true;
   setInterval(updateGuardControls,250);
 }
 setModeUi();
 updateJournalUi();
 await render();
+if(managedGuardProfile&&location.protocol==='https:')setInterval(()=>{
+  const s=walletGuard?.status;
+  if(!s?.renewable||s.remainingSeconds>15||s.busy||s.writing||s.previewValid||state.guardUiBusy||document.visibilityState!=='visible'||$("#confirm-dialog")?.open||$("#wallet-dialog")?.open)return;
+  void guardUiAction(async()=>{
+    state.connectionEpoch++;
+    try{await walletGuard.renew();await render();}
+    catch(error){await render();throw error;}
+  });
+},1000);

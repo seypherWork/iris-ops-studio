@@ -6,7 +6,7 @@ export async function runRenewal(t){
  const body=id=>({confirmation:'RENEW READ ONLY',renewalId:id});
  function valid(value){
   assert.deepEqual(Object.keys(value).sort(),['actor','authorizationSeconds','connected','idleSeconds','mode','renewalId','renewalSeconds']);
-  assert.equal(value.connected,true);assert.equal(value.mode,'read-only');assert.equal(value.actor,t.user);assert.match(value.renewalId,/^[a-f0-9]{32}$/);assert.ok(value.authorizationSeconds>0&&value.authorizationSeconds<=60);assert.equal(value.idleSeconds,value.authorizationSeconds);assert.ok(value.renewalSeconds>=value.authorizationSeconds&&value.renewalSeconds<=300);
+  assert.equal(value.connected,true);assert.equal(value.mode,'read-only');assert.equal(value.actor,t.user);assert.match(value.renewalId,/^[a-f0-9]{32}$/);assert.ok(value.authorizationSeconds>0&&value.authorizationSeconds<=60);assert.ok(value.idleSeconds>=value.authorizationSeconds&&value.idleSeconds<=value.renewalSeconds+1);assert.ok(value.renewalSeconds>=value.authorizationSeconds&&value.renewalSeconds<=3600);
  }
  let h=await login(),first=metadata.get(h);const plans=[];
  for(const kind of ['wallet','webapp']){
@@ -40,15 +40,15 @@ export async function runRenewal(t){
  }finally{setRole(true);}
  assert.deepEqual(native(),expected);pass('native permission revocation survives refresh and blocks wallet writes; disposable role restored');
  // Real wall-clock evidence: do not shorten/edit any server timestamp.
- const began=Date.now();h=await login();first=metadata.get(h);let current=first,last=current.renewalId;
- for(const second of [40,80,120,160,200,240,280]){
+ h=await login();const began=Date.now();first=metadata.get(h);let current=first;
+ for(const second of [...Array.from({length:89},(_,i)=>(i+1)*40),3580]){
   await waitUntil(began+second*1000,'explicit renewal family cap');
-  const r=await request('/renew','POST',body(current.renewalId),h);assert.equal(r.status,200,'Renewal failed at '+second+'s');valid(r.body);assert.ok(r.body.renewalSeconds<=first.renewalSeconds-second+2);last=current.renewalId;current=r.body;
+  const r=await request('/renew','POST',body(current.renewalId),h);assert.equal(r.status,200,'Renewal failed at '+second+'s');valid(r.body);assert.ok(r.body.renewalSeconds<=first.renewalSeconds-second+2);current=r.body;
   assert.equal((await request('/wallet/state?name='+wallet,'GET',undefined,h)).status,200);
  }
- assert.ok(current.authorizationSeconds<=21,'Final JWT custody must be clamped to original family cap');
- await waitUntil(began+303000,'absolute family expiry');
+ assert.ok(current.authorizationSeconds<=21,'Final native custody must be clamped to original family cap');
+ await waitUntil(began+3603000,'absolute family expiry');
  assert.equal((await request('/renew','POST',body(current.renewalId),h)).status,401);
  assert.equal((await request('/capabilities','GET',undefined,h)).status,401);assert.deepEqual(native(),expected);
- pass('seven explicit native refreshes across real five-minute clock; original family cap expires despite activity and cannot be renewed');
+ pass('ninety explicit native refreshes across real one-hour clock; original family cap expires despite activity and cannot be renewed');
 }

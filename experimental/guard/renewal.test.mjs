@@ -5,7 +5,7 @@ import {CombinedGuard} from '../../web/assets/combined-guard.js';
 function fixture(){
  let now=0,serial=1,extra=()=>null;const calls=[],data=new Map();
  const id=()=>String(serial++).padStart(32,'0');
- const auth=()=>({actor:'Tester',connected:true,mode:'read-only',authorizationSeconds:Math.min(59,300-now),idleSeconds:Math.min(59,300-now),renewalId:id(),renewalSeconds:300-now});
+ const auth=()=>({actor:'Tester',connected:true,mode:'read-only',authorizationSeconds:Math.min(59,3600-now),idleSeconds:3600-now,renewalId:id(),renewalSeconds:3600-now});
  const response=body=>{if(body.wallet&&body.webapp)body.policy={generation:'a'.repeat(32),resources:['IRISOPS_GUARDPROBERESOURCE','IRISOPS_GUARDPROBEALTERNATE']};return {ok:true,status:200,json:async()=>body};};
  const fetcher=async(url,o)=>{calls.push({url,...o});const r=await extra(url,o);if(r)return r;
   return response(url.endsWith('/session')?{actor:'Tester',csrf:'synthetic'}:/\/(connect|renew)$/.test(url)?auth():url.endsWith('/deployment')?{mode:'ACTIVE',generation:'a'.repeat(32),build:'managed-lab-a'}:url.endsWith('/capabilities')?{wallet:{available:true,target:'IrisOps_GuardProbeWallet',reason:'available'},webapp:{available:true,target:'/csp/irisops-guard-testweb',reason:'available'}}:url.endsWith('/channels')?{channel:id(),mode:'read-only'}:url.endsWith('/write-access')?{mode:'write-enabled',expiresIn:60}:{});
@@ -17,17 +17,17 @@ test('explicit renewal sends no password or upstream token, rotates nonce and in
  const t=fixture(),s=new GuardSession(t.fetcher,t.clock,'managed',true);await s.login('Tester','synthetic');const epoch=s.epoch;t.at(40);await s.renew();assert.ok(s.connected);assert.ok(s.epoch>epoch);assert.equal(s.remainingSeconds,59);
  const sent=t.calls.filter(c=>c.url.endsWith('/renew'));assert.equal(sent.length,1);assert.deepEqual(Object.keys(JSON.parse(sent[0].body)).sort(),['confirmation','renewalId']);assert.equal(sent[0].headers.Authorization,undefined);assert.equal(sent[0].body.includes('synthetic'),false);assert.equal(JSON.parse(sent[0].body).confirmation,'RENEW READ ONLY');
 });
-test('continuous explicit renewals cannot extend the original five-minute family',async()=>{
- const t=fixture(),s=new GuardSession(t.fetcher,t.clock,'managed',true);await s.login('Tester','synthetic');for(const second of [40,80,120,160,200,240,280,299]){t.at(second);await s.renew();assert.ok(s.connected);}t.at(300);assert.equal(s.connected,false);const n=t.calls.length;await assert.rejects(s.renew());assert.equal(t.calls.length,n);
+test('read-only renewals cannot extend the original one-hour family',async()=>{
+ const t=fixture(),s=new GuardSession(t.fetcher,t.clock,'managed',true);await s.login('Tester','synthetic');for(const second of [40,80,300,1200,2400,3590,3599]){t.at(second);await s.renew();assert.ok(s.connected);}t.at(3600);assert.equal(s.connected,false);const n=t.calls.length;await assert.rejects(s.renew());assert.equal(t.calls.length,n);
 });
-test('native expiry and idle stop renewal without even sending an HTTP request',async()=>{
- const t=fixture(),s=new GuardSession(t.fetcher,t.clock,'managed',true);await s.login('Tester','synthetic');t.at(59);const n=t.calls.length;await assert.rejects(s.renew());assert.equal(t.calls.length,n);assert.equal(s.renewable,false);
+test('expired native access can renew safely but cannot run an operation first',async()=>{
+ const t=fixture(),s=new GuardSession(t.fetcher,t.clock,'managed',true);await s.login('Tester','synthetic');t.at(59);const n=t.calls.length;await assert.rejects(s.request('/wallet/state','GET'),e=>e.code==='renewal_required');assert.equal(t.calls.length,n);assert.equal(s.renewable,true);await s.renew();assert.equal(s.connected,true);
 });
 test('lost renewal response consumes local permission to renew; no retry',async()=>{
  const t=fixture(),s=new GuardSession(t.fetcher,t.clock,'managed',true);await s.login('Tester','synthetic');t.override(url=>{if(url.endsWith('/renew'))throw Error('lost');});await assert.rejects(s.renew());assert.equal(s.connected,false);await assert.rejects(s.renew());assert.equal(t.calls.filter(c=>c.url.endsWith('/renew')).length,1);
 });
 test('malformed or extended renewal metadata cannot reactivate a session',async()=>{
- for(const change of [{actor:'other'},{mode:'write-enabled'},{renewalSeconds:300},{renewalId:'not-an-id'},{renewalId:'1'.padStart(32,'0')},{authorizationSeconds:60,idleSeconds:120}]){
+ for(const change of [{actor:'other'},{mode:'write-enabled'},{renewalSeconds:3600},{renewalId:'not-an-id'},{renewalId:'1'.padStart(32,'0')},{authorizationSeconds:60,idleSeconds:59},{idleSeconds:3601}]){
   const t=fixture(),s=new GuardSession(t.fetcher,t.clock,'managed',true);await s.login('Tester','synthetic');t.at(40);t.override(url=>url.endsWith('/renew')?t.response({...t.auth(),...change}):null);await assert.rejects(s.renew());assert.equal(s.connected,false);
  }
 });

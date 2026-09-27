@@ -1,6 +1,6 @@
-import {WalletGuard,isManagedLoopbackOrigin} from './wallet-guard.js';
+import {WalletGuard,isManagedLoopbackOrigin} from './wallet-guard.js?v=1.3.1';
 import {GuardClient,GuardError} from '../../experimental/guard/ui/client.js';
-import {GuardSession} from '../../experimental/guard/ui/session.js';
+import {GuardSession} from '../../experimental/guard/ui/session.js?v=1.3.1';
 export class CombinedGuard {
  #session;#guards;#kind='wallet';#busy=false;#capabilities=null;
  constructor({origin,fetcher,storage,clock=()=>Date.now(),profile='combined'}){
@@ -12,7 +12,7 @@ export class CombinedGuard {
   }
  }
  get kind(){return this.#kind;}
- get status(){const s=this.#guards[this.#kind].status;return {...s,busy:this.#busy||s.busy,connected:s.connected&&this.#session.connected,renewable:this.#session.renewable,remainingSeconds:this.#session.remainingSeconds,capability:this.#capabilities?.[this.#kind]?.available===true,deploymentMode:this.#session.deploymentMode};}
+ get status(){const s=this.#guards[this.#kind].status;return {...s,busy:this.#busy||s.busy,connected:s.connected&&this.#session.connected,renewable:this.#session.renewable,remainingSeconds:this.#session.remainingSeconds,sessionRemainingSeconds:this.#session.sessionRemainingSeconds,capability:this.#capabilities?.[this.#kind]?.available===true,deploymentMode:this.#session.deploymentMode};}
  get result(){return this.#guards[this.#kind].result;}
  get target(){return this.#session.connected?this.#guards[this.#kind].target:'';}
  get resources(){return this.#session.connected?this.#guards[this.#kind].resources:[];}

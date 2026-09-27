@@ -16,14 +16,18 @@ export class GuardSession {
  get actor(){return this.#actor;}
  get connected(){return !!this.#actor&&this.#clock()<this.#until&&this.#clock()<this.#idleUntil;}
  get remainingSeconds(){return Math.max(0,Math.floor((this.#until-this.#clock())/1000));}
- get renewable(){return this.#tls&&this.connected&&!this.#renewing&&isId(this.#renewalId)&&this.#clock()<this.#renewUntil;}
+ get sessionRemainingSeconds(){return Math.max(0,Math.floor(((this.#tls?this.#renewUntil:this.#until)-this.#clock())/1000));}
+ get renewable(){return this.#tls&&!!this.#actor&&!this.#renewing&&isId(this.#renewalId)&&this.#clock()<this.#idleUntil&&this.#clock()<this.#renewUntil;}
  get deploymentMode(){return this.#profile==='managed'?(this.#deployment?.mode||'UNAVAILABLE'):null;}
  get targets(){return this.#targets===undefined?undefined:structuredClone(this.#targets);}
  reset(){this.#epoch++;this.#csrf='';this.#actor='';this.#until=0;this.#idleUntil=0;this.#idleMs=0;this.#deployment=null;this.#renewalId='';this.#renewUntil=0;this.#renewing=false;this.#targets=undefined;this.#policySignature='';}
  async request(path,method='POST',data={},authorization){
   if(!/^\/(?:session|connect|logout|renew|capabilities|deployment|(?:wallet|webapp|role|user)\/(?:state|channels|previews|operations)(?:[/?].*)?)$/.test(path)||path.includes('..')||path.includes('\\')||(/^\/(role|user)\//.test(path)&&this.#profile!=='managed')||(path==='/deployment'&&this.#profile!=='managed')||(path==='/renew'&&!this.#tls))throw new GuardError('invalid_request');
   const epoch=this.#epoch,started=this.#clock(),headers={Accept:'application/json'};
-  if(this.#actor&&!this.connected&&path!=='/logout'){this.reset();throw new GuardError('reconnect_required');}
+  if(this.#actor&&!this.connected&&path!=='/logout'&&path!=='/renew'){
+   if(this.renewable)throw new GuardError('renewal_required');
+   this.reset();throw new GuardError('reconnect_required');
+  }
   if(method!=='GET'){headers['Content-Type']='application/json';headers['X-IrisOps-CSRF']=this.#csrf;}
   if(authorization)headers.Authorization=authorization;
   let r,body;
@@ -34,7 +38,7 @@ export class GuardSession {
   if(r.status===401){this.reset();throw new GuardError('reconnect_required',401);}
   if(!r.ok&&!['BLOCKED','UNKNOWN','RECEIPT_INCOMPLETE','FAILED_BEFORE_DISPATCH'].includes(body.state))throw new GuardError(typeof body.error==='string'?body.error:'request_rejected',r.status);
   // Deployment/session polling cannot keep a native authorization alive.
-  if(r.ok&&this.#actor&&(path==='/capabilities'||/^\/(wallet|webapp|role|user)\//.test(path)))this.#idleUntil=Math.min(this.#until,started+this.#idleMs);
+  if(r.ok&&this.#actor&&(path==='/capabilities'||/^\/(wallet|webapp|role|user)\//.test(path)))this.#idleUntil=Math.min(this.#tls?this.#renewUntil:this.#until,started+this.#idleMs);
   return body;
  }
  async login(user,password){
@@ -52,15 +56,15 @@ export class GuardSession {
   }catch(e){if(epoch===this.#epoch)this.reset();throw e;}
  }
  #accept(info,user,started,renewal=false){
-  const cap=this.#tls?300:60,seconds=info.authorizationSeconds,idle=Math.min(this.#tls?120:60,seconds);
-  if(info.actor!==user||info.connected!==true||info.mode!=='read-only'||!Number.isInteger(seconds)||seconds<1||seconds>cap||(this.#tls&&info.idleSeconds!==idle))throw new GuardError('invalid_session');
+  const cap=this.#tls?300:60,seconds=info.authorizationSeconds;
+  if(info.actor!==user||info.connected!==true||info.mode!=='read-only'||!Number.isInteger(seconds)||seconds<1||seconds>cap)throw new GuardError('invalid_session');
   if(this.#tls){
-   if(!isId(info.renewalId)||!Number.isInteger(info.renewalSeconds)||info.renewalSeconds<seconds||info.renewalSeconds>300)throw new GuardError('invalid_session');
+   if(!isId(info.renewalId)||!Number.isInteger(info.renewalSeconds)||info.renewalSeconds<seconds||info.renewalSeconds>3600||!Number.isInteger(info.idleSeconds)||info.idleSeconds<seconds||info.idleSeconds>3600||info.idleSeconds>info.renewalSeconds+1)throw new GuardError('invalid_session');
    const deadline=started+info.renewalSeconds*1000;
    if(renewal&&deadline>this.#renewUntil+1000)throw new GuardError('invalid_session');
    this.#renewUntil=renewal?Math.min(this.#renewUntil,deadline):deadline;this.#renewalId=info.renewalId;
   }
-  this.#actor=user;this.#until=Math.min(started+seconds*1000,this.#tls?this.#renewUntil:Infinity);this.#idleMs=idle*1000;this.#idleUntil=Math.min(this.#until,started+this.#idleMs);
+  this.#actor=user;this.#until=Math.min(started+seconds*1000,this.#tls?this.#renewUntil:Infinity);this.#idleMs=(this.#tls?info.idleSeconds:seconds)*1000;this.#idleUntil=Math.min(this.#tls?this.#renewUntil:this.#until,started+this.#idleMs);
   if(!this.connected)throw new GuardError('reconnect_required');
  }
  async renew(){

@@ -24,8 +24,8 @@ test("HTML exposes unique controls and safe dialog actions", async () => {
   assert.match(html, /id="wallet-use-resource"/);
   assert.doesNotMatch(html, /[^\x00-\x7F]/, "Static IRIS HTML must use character entities, independently of server charset");
   assert.match(html, /id="confirm-submit"[^>]+disabled/);
-  assert.match(html, /assets\/styles\.css\?v=1\.2\.1/);
-  assert.match(html, /assets\/startup\.js\?v=1\.2\.1-startup2/);
+  assert.match(html, /assets\/styles\.css\?v=1\.3\.1/);
+  assert.match(html, /assets\/startup\.js\?v=1\.3\.1/);
   assert.match(html, /id="app-root" inert aria-busy="true"/);
   assert.match(html, /id="mode-label">Not connected/);
 });

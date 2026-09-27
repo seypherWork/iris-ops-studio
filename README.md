@@ -4,7 +4,67 @@
 
 # IRIS Ops Studio
 
-## 1.3.0 — Bounded Server Guard & Durable Recovery
+> **1.3.1 judge route:** the optional HTTPS managed guard has a fixed maximum
+> one-hour navigation session with bounded read-only renewal. Write approvals
+> and previews remain short-lived, and guard navigation shows only enrolled
+> workflows. The full direct-API console remains a separate entry point; its
+> CPU/memory gauges are demo-only, not a live host CPU percentage. See the
+> [judge's guide](experimental/guard/package/judge-guide.md) and the
+> [validation record](docs/session-hour-validation-20260927.md). The earlier
+> 1.3.0 release and its SHA-256 remain historical, unchanged artifacts.
+
+## Start here, judges: two separate entry points
+
+This repository has a **complete direct SysAdmin console** and an **optional,
+deliberately narrow managed guard**. They are separate installations. The guard
+does not make every console page server-enforced read-only, and the standard
+IPM/Docker install does not install the guard. Please do not evaluate one URL as
+though it contained the other one's workspaces.
+
+| Evaluation route | Start with | What it proves | What it does not prove |
+| --- | --- | --- | --- |
+| Safe demo, about 90 seconds | `npm start`, then `http://127.0.0.1:4173` | Navigation, guided previews, labeled simulations | Live IRIS behavior or native authorization |
+| Full direct console on disposable IRIS | [standard installation](#run-with-intersystems-iris), then `Connection settings` with demo off | IRIS-backed overview, processes, tasks, storage, logs and guided actions | Server READ_ONLY for all routes; a real host CPU percentage |
+| Managed guard on a **separate new** disposable IRIS | The exact-hash review ZIP and [judge's guide](experimental/guard/package/judge-guide.md) | Server READ_ONLY and bounded wallet, Web app, test-role and disabled-test-user workflows, where targets are enrolled | General management portal coverage or an in-place upgrade |
+
+For a complete review, use the [judge evaluation route](docs/JURY-EVALUATION.md).
+For a technical decision, run `npm run check`, inspect the exact release ZIP
+hash, and repeat one reversible, owned-fixture workflow in Live IRIS. Look for
+the server's denial before write approval, the target-bound preview, a fresh
+precondition check, the native readback and an inspectable receipt. Never use
+real accounts, roles, applications or secrets as demonstration targets. The
+three linked videos below show earlier versions, not the optional managed
+guard. The [1.3.1 validation record](docs/session-hour-validation-20260927.md)
+distinguishes the observed one-hour browser expiry from the still-unrun
+scripted long-duration test.
+
+## 1.3.1 — One-hour guard navigation and clearer judge route
+
+- Fixed maximum one-hour HTTPS guard session; native read-only access renews
+  while the tab is visible and idle, without extending that fixed deadline.
+- Workflow-specific write approval remains at most 60 seconds and an exact
+  target preview at most 30 seconds. Renewal returns to read-only.
+- Guard navigation now exposes only Wallet, Web apps, Access control and the
+  local Session journal; unsupported direct-console pages are not presented as
+  disconnected guarded workspaces.
+- The [English evaluation route](docs/JURY-EVALUATION.md) distinguishes the
+  zero-credential demo, the broad direct console and the optional narrow guard.
+- 270/270 JavaScript tests and 18 native renewal checks passed in the local
+  candidate. A real laboratory browser session reached its displayed one-hour
+  boundary and requested reconnection; the separate scripted long-duration
+  run was not completed. These claims do not establish production readiness.
+
+The optional guard still needs its separate exact-hash review ZIP, explicit
+certificate-trust decision, private local operator and enrolled disposable
+targets. The normal 1.3.1 IPM/Docker path installs the direct console and logs,
+**not** the managed guard. Use the [1.3.1 GitHub release](https://github.com/seypherWork/iris-ops-studio/releases/tag/v1.3.1)
+for `irisops-guard-enrolled-review-v1.3.1-20260927.zip` (SHA-256
+`748A1B361198AA6AEA850E6AA32CB538724C9A47C21C25D0364E662571B655DE`).
+Its extracted bundle verifies with `node portable.mjs verify` (bundle content
+SHA-256 `6cb115882a4cea63f0d7b74854daeed168e8280585a7434db6728f8fcbe7a6f0`).
+No in-place upgrade has been validated; use a new disposable IRIS instance.
+
+## Earlier 1.3.0 — Bounded Server Guard & Durable Recovery
 
 This checkout also contains the **optional managed server guard**, prepared and
 validated for bounded technical evaluation. It is not installed by the standard console commands below and does
@@ -20,7 +80,7 @@ not turn every existing workspace into a server-guarded workflow.
   fresh preconditions, native readback and persistent uncertainty recovery.
 - Independent, digest-checked local source package with an interactive installer,
   public-certificate verification and stop-without-deletion flow. No npm install.
-- Current source: **269/269 JavaScript tests**; native log reader: **20/20 Linux
+- Public 1.3.0 source: **269/269 JavaScript tests**; native log reader: **20/20 Linux
   tests**. Candidate C passed a fresh real-IRIS installation with all four bounded
   workflows, interruption/recovery checks and desktop/mobile browser validation.
 
@@ -30,7 +90,7 @@ target enrollment are deliberate administrator steps. Earlier versions and
 historical validation numbers below remain explicitly versioned; the videos
 show earlier versions, not this guard.
 
-The normal 1.3.0 IPM module installs the direct console and log
+The 1.3.0 IPM module installed the direct console and log
 extension, **not the optional managed guard**. Use its separate, exact-hash
 review ZIP and judge's guide for server-enforced workflows. Download it from the
 [1.3.0 release](https://github.com/seypherWork/iris-ops-studio/releases/tag/v1.3.0).
@@ -51,7 +111,7 @@ as historical evidence; their limits still apply.
 <p align="center">
   <a href="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml"><img src="https://github.com/seypherWork/iris-ops-studio/actions/workflows/ci.yml/badge.svg" alt="Verification status"></a>
   <img src="https://img.shields.io/badge/IRIS-2026.2-00a79d" alt="InterSystems IRIS 2026.2">
-  <img src="https://img.shields.io/badge/tests-269%20passing-26a269" alt="269 JavaScript tests passing locally for 1.3.0">
+  <img src="https://img.shields.io/badge/tests-270%20passing-26a269" alt="270 JavaScript tests passing locally for 1.3.1">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 

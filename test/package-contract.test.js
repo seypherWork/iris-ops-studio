@@ -13,10 +13,10 @@ test("ZPM resource directory matches the ObjectScript source layout", async () =
   const dockerfile = await readFile(new URL("Dockerfile", root), "utf8");
   assert.match(moduleXml, /<SourcesRoot>src<\/SourcesRoot>/);
   assert.match(moduleXml, /<Resource Directory="cls" Name="IrisOps\.PKG"\/>/);
-  assert.equal(packageJson.version, "1.3.0");
+  assert.equal(packageJson.version, "1.3.1");
   assert.equal(packageJson.engines.node, ">=22");
-  assert.match(moduleXml, /<Version>1\.3\.0<\/Version>/);
-  assert.match(aboutClass, /Quit "1\.3\.0"/);
+  assert.match(moduleXml, /<Version>1\.3\.1<\/Version>/);
+  assert.match(aboutClass, /Quit "1\.3\.1"/);
   assert.match(ciWorkflow, /node: \[22, 24\]/);
   assert.match(compose, /ISC_DATA_DIRECTORY:\s*\/durable\/iris/);
   assert.match(compose, /iris-data:\/durable/);

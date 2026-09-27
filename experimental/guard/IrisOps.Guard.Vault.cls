@@ -13,14 +13,18 @@ ClassMethod Clear()
     kill %session.Data("IrisOpsGuard","auth")
     kill %session.Data("IrisOpsGuard","channels"),%session.Data("IrisOpsGuard","previews"),%session.Data("IrisOpsGuard","previewCount")
 }
-/// Fixed policy, never a client-selected timeout. Legacy HTTP profiles stay 60s.
+/// Access custody is short; the HTTPS session family has a separate fixed deadline.
 ClassMethod Lifetime() As %Integer
 {
     quit $select($extract(##class(IrisOps.Guard.HttpApi).ExpectedOrigin(),1,8)="https://":300,1:60)
 }
+ClassMethod FamilySeconds() As %Integer
+{
+    quit $select(..Lifetime()=300:3600,1:60)
+}
 ClassMethod IdleSeconds() As %Integer
 {
-    quit $select(..Lifetime()=300:120,1:60)
+    quit ..FamilySeconds()
 }
 
 ClassMethod Boot(create As %Boolean = 0) As %String
@@ -63,8 +67,8 @@ ClassMethod Seal(token As %String, ByRef seconds As %Integer = 0, nativeExpiry A
         }
         if refresh'="" {
             if ..Lifetime()'=300 quit
-            if renewUntil=0 set renewUntil=now+300
-            if (renewUntil<=now)!(renewUntil>(now+300)) quit
+            if renewUntil=0 set renewUntil=now+..FamilySeconds()
+            if (renewUntil<=now)!(renewUntil>(now+..FamilySeconds())) quit
             if renewUntil<expires set expires=renewUntil
         }
         set seconds=expires-now
@@ -75,7 +79,8 @@ ClassMethod Seal(token As %String, ByRef seconds As %Integer = 0, nativeExpiry A
         set %session.Data("IrisOpsGuard","auth","iv")=iv
         set %session.Data("IrisOpsGuard","auth","cipher")=cipher
         set %session.Data("IrisOpsGuard","auth","boot")=boot
-        set %session.Data("IrisOpsGuard","auth","idleUntil")=now+$select(seconds<..IdleSeconds():seconds,1:..IdleSeconds())
+        set idleEnd=$select(refresh'="":renewUntil,1:expires)
+        set %session.Data("IrisOpsGuard","auth","idleUntil")=$select(now+..IdleSeconds()<idleEnd:now+..IdleSeconds(),1:idleEnd)
         if refresh'="" {
             set %session.Data("IrisOpsGuard","auth","renewalId")=##class(IrisOps.Guard.Protocol).Id()
             set %session.Data("IrisOpsGuard","auth","renewUntil")=renewUntil
@@ -88,7 +93,7 @@ ClassMethod Seal(token As %String, ByRef seconds As %Integer = 0, nativeExpiry A
     quit success
 }
 
-ClassMethod Open(Output token As %String, Output context As %DynamicObject) As %Boolean
+ClassMethod Open(Output token As %String, Output context As %DynamicObject, forRenewal As %Boolean = 0) As %Boolean
 {
     set token="",context="",success=0
     try {
@@ -100,10 +105,17 @@ ClassMethod Open(Output token As %String, Output context As %DynamicObject) As %
         set text=$system.Encryption.AESGCMDecrypt(cipher,key,iv,..AAD(boot))
         set value={}.%FromJSON(text)
         set now=..Now(),idle=$get(%session.Data("IrisOpsGuard","auth","idleUntil"))
-        if (value.actor'=$username)!(value.expires<=now)!(idle<=now)!(idle>value.expires) quit
-        // Activity never changes the encrypted absolute deadline or refreshes JWTs.
-        set %session.Data("IrisOpsGuard","auth","idleUntil")=$select(now+..IdleSeconds()<value.expires:now+..IdleSeconds(),1:value.expires)
-        set token=value.access,context=value,success=1
+        set familyEnd=value.%Get("renewUntil",value.expires)
+        if (value.actor'=$username)!(idle<=now)!(idle>familyEnd)!(familyEnd<=now) quit
+        if forRenewal {
+            if (value.%Get("refresh","")="") quit
+            // An expired access token is never returned or used for an operation.
+            set context=value,success=1
+        } else {
+            if value.expires<=now quit
+            set %session.Data("IrisOpsGuard","auth","idleUntil")=$select(now+..IdleSeconds()<familyEnd:now+..IdleSeconds(),1:familyEnd)
+            set token=value.access,context=value,success=1
+        }
     } catch e {
         set success=0
     }
@@ -117,7 +129,7 @@ ClassMethod ConsumeRenewal(id As %String, Output refresh As %String, Output unti
 {
     set refresh="",until=0
     if id'=$get(%session.Data("IrisOpsGuard","auth","renewalId")) quit "stale_renewal"
-    if '..Open(.token,.value) quit "upstream_reconnect_required"
+    if '..Open(.token,.value,1) quit "upstream_reconnect_required"
     set refresh=value.%Get("refresh",""),until=value.%Get("renewUntil",0)
     kill token,value
     do ..Clear()
